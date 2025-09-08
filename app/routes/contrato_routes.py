@@ -1,6 +1,6 @@
 # app/routes/contrato_routes.py
 from flask import Blueprint, request, jsonify
-from app.repository import contrato_repo, contratado_repo, modalidade_repo, status_repo, usuario_repo
+from app.repository import contrato_repo, contratado_repo, modalidade_repo, relatorio_repo, status_repo, usuario_repo
 
 bp = Blueprint('contratos', __name__, url_prefix='/contratos')
 
@@ -48,7 +48,15 @@ def list_all():
 @bp.route('/<int:id>', methods=['GET'])
 def get_by_id(id):
     contrato = contrato_repo.find_contrato_by_id(id)
-    if not contrato: return jsonify({'error': 'Contrato não encontrado'}), 404
+    if not contrato:
+        return jsonify({'error': 'Contrato não encontrado'}), 404
+    
+    # Busca os relatórios fiscais associados a este contrato
+    relatorios = relatorio_repo.find_relatorios_by_contrato_id(id)
+    
+    # Adiciona a lista de relatórios ao objeto do contrato
+    contrato['relatorios_fiscais'] = relatorios
+    
     return jsonify(contrato), 200
 
 @bp.route('/<int:id>', methods=['PATCH'])

@@ -6,7 +6,7 @@ from .routes import (
     usuario_routes, contratado_routes, modalidade_routes, 
     status_routes, perfil_routes, contrato_routes,
     pendencia_routes, status_pendencia_routes, status_relatorio_routes, 
-    relatorio_routes
+    relatorio_routes, arquivo_routes
 )
 
 def create_app(test_config=None):
@@ -29,6 +29,7 @@ def create_app(test_config=None):
     app.register_blueprint(status_pendencia_routes.bp)
     app.register_blueprint(status_relatorio_routes.bp) 
     app.register_blueprint(relatorio_routes.bp)
+    app.register_blueprint(arquivo_routes.bp)
 
     @app.cli.command("seed-db")
     def seed_db_command():

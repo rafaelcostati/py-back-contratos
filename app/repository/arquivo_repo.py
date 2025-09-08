@@ -21,3 +21,12 @@ def create_arquivo(nome_arquivo, path_armazenamento, tipo_arquivo, tamanho_bytes
     finally:
         cursor.close()
     return new_arquivo
+
+def find_arquivo_by_id(arquivo_id):
+    """Busca um arquivo pelo seu ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT * FROM arquivo WHERE id = %s", (arquivo_id,))
+    arquivo = cursor.fetchone()
+    cursor.close()
+    return arquivo
