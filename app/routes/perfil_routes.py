@@ -4,7 +4,7 @@ from app.repository import perfil_repo
 
 bp = Blueprint('perfis', __name__, url_prefix='/perfis')
 
-@bp.route('/', methods=['POST'])
+@bp.route('', methods=['POST'])
 def create():
     data = request.get_json()
     if not data or 'nome' not in data:

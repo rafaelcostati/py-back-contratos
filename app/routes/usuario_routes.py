@@ -5,7 +5,6 @@ from app.repository import usuario_repo
 
 bp = Blueprint('usuarios', __name__, url_prefix='/usuarios')
 
-# --- ROTAS EXISTENTES (CRUD) ---
 @bp.route('', methods=['POST'])
 def create():
     data = request.get_json()
@@ -17,9 +16,7 @@ def create():
     senha_hash = generate_password_hash(senha)
 
     try:
-        # Capturamos o novo usuário que a função do repositório agora retorna
         new_user = usuario_repo.create_user(nome, email, cpf, matricula, senha_hash, perfil_id)
-        # Retornamos o objeto do novo usuário como JSON
         return jsonify(new_user), 201
     except Exception as e:
         return jsonify({'error': f'Erro ao criar usuário: {e}'}), 409
@@ -59,13 +56,8 @@ def delete(id):
     except Exception as e:
         return jsonify({'error': f'Erro ao deletar usuário: {e}'}), 500
 
-# --- NOVAS ROTAS PARA GESTÃO DE SENHA ---
-
 @bp.route('/<int:id>/resetar-senha', methods=['PATCH'])
 def admin_reset_password(id):
-    """
-    Endpoint para um Admin resetar a senha de qualquer usuário.
-    """
     data = request.get_json()
     if not data or 'nova_senha' not in data:
         return jsonify({'error': 'A nova senha não foi fornecida'}), 400
@@ -82,10 +74,6 @@ def admin_reset_password(id):
 
 @bp.route('/<int:id>/alterar-senha', methods=['PATCH'])
 def user_change_password(id):
-    """
-    Endpoint para um usuário alterar a própria senha.
-    NOTA: Atualmente, passamos o ID na URL. Com JWT, o ID virá do token.
-    """
     data = request.get_json()
     if not data or not all(k in data for k in ('senha_antiga', 'nova_senha')):
         return jsonify({'error': 'Senha antiga e nova são obrigatórias'}), 400
@@ -95,11 +83,9 @@ def user_change_password(id):
         if user is None:
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        # Verifica se a senha antiga fornecida está correta
         if not check_password_hash(user['senha'], data['senha_antiga']):
-            return jsonify({'error': 'Senha antiga incorreta'}), 401 # 401 Unauthorized
+            return jsonify({'error': 'Senha antiga incorreta'}), 401
         
-        # Se estiver correta, atualiza para a nova senha
         nova_senha_hash = generate_password_hash(data['nova_senha'])
         usuario_repo.update_password(id, nova_senha_hash)
         

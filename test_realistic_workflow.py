@@ -3,6 +3,10 @@ import requests
 import os
 import random
 import string
+from dotenv import load_dotenv, find_dotenv
+
+# --- CORREÇÃO: Carrega as variáveis de ambiente do .env ---
+load_dotenv(find_dotenv())
 
 BASE_URL = 'http://127.0.0.1:5000'
 
@@ -20,16 +24,11 @@ class TestRealisticWorkflow(unittest.TestCase):
         cls.seed_ids = {}
 
         def get_id_by_name(endpoint, name):
-            
-            if endpoint.startswith('/'):
-                endpoint = endpoint[1:]
-                
-            url = f"{BASE_URL}/{endpoint}"
+            url = f"{BASE_URL}{endpoint}"
             r = requests.get(url)
             assert r.status_code == 200, f"Falha ao buscar dados de {url}. Resposta: {r.text}"
             for item in r.json():
-                if item['nome'] == name:
-                    return item['id']
+                if item['nome'] == name: return item['id']
             raise Exception(f"'{name}' não encontrado em {url}. O banco foi populado com 'flask seed-db'?")
 
         print("-> Buscando IDs dos dados do seed...")
@@ -44,20 +43,22 @@ class TestRealisticWorkflow(unittest.TestCase):
         cls.seed_ids['status_relatorio_rejeitado'] = get_id_by_name('/statusrelatorio', 'Rejeitado com Pendência')
         
         # Pega o ID do Admin criado pelo seeder
-        admin_email = os.getenv('ADMIN_EMAIL', 'admin@sigescon.com')
+        admin_email = os.getenv('ADMIN_EMAIL') # Agora vai ler o .env corretamente
+        assert admin_email, "A variável ADMIN_EMAIL não foi encontrada no arquivo .env"
+        
         r_users = requests.get(f'{BASE_URL}/usuarios')
         cls.created_ids['admin'] = next(user['id'] for user in r_users.json() if user['email'] == admin_email)
         print("-> IDs do seed carregados com sucesso.")
 
         print("-> Criando atores para o teste (Contratado, Gestor, Fiscal)...")
         random_str = generate_random_string()
-        r_contratado = requests.post(f'{BASE_URL}/contratados/', json={"nome": "Empresa de Teste de Workflow", "email": f"workflow_{random_str}@teste.com", "cnpj": f"{random.randint(10**13, 10**14-1)}"})
+        r_contratado = requests.post(f'{BASE_URL}/contratados', json={"nome": "Empresa de Teste de Workflow", "email": f"workflow_{random_str}@teste.com", "cnpj": f"{random.randint(10**13, 10**14-1)}"})
         cls.created_ids['contratado'] = r_contratado.json()['id']
         
-        r_gestor = requests.post(f'{BASE_URL}/usuarios/', json={"nome": "Gestor de Workflow", "email": f"gestor_wf_{random_str}@teste.com", "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": "123", "perfil_id": cls.seed_ids['perfil_gestor']})
+        r_gestor = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Gestor de Workflow", "email": f"gestor_wf_{random_str}@teste.com", "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": "123", "perfil_id": cls.seed_ids['perfil_gestor']})
         cls.created_ids['gestor'] = r_gestor.json()['id']
 
-        r_fiscal = requests.post(f'{BASE_URL}/usuarios/', json={"nome": "Fiscal de Workflow", "email": f"fiscal_wf_{random_str}@teste.com", "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": "123", "perfil_id": cls.seed_ids['perfil_fiscal']})
+        r_fiscal = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Fiscal de Workflow", "email": f"fiscal_wf_{random_str}@teste.com", "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": "123", "perfil_id": cls.seed_ids['perfil_fiscal']})
         cls.created_ids['fiscal'] = r_fiscal.json()['id']
         
         print(f"-> Atores criados com sucesso: Contratado({cls.created_ids['contratado']}), Gestor({cls.created_ids['gestor']}), Fiscal({cls.created_ids['fiscal']})")
@@ -75,7 +76,7 @@ class TestRealisticWorkflow(unittest.TestCase):
             "status_id": self.seed_ids['status_vigente'], "gestor_id": self.created_ids['gestor'], 
             "fiscal_id": self.created_ids['fiscal'], "fiscal_substituto_id": self.created_ids['fiscal']
         }
-        r = requests.post(f'{BASE_URL}/contratos/', json=contrato_payload); self.assertEqual(r.status_code, 201)
+        r = requests.post(f'{BASE_URL}/contratos', json=contrato_payload); self.assertEqual(r.status_code, 201)
         contrato_id = r.json()['id']
         self.__class__.created_ids['contrato'] = contrato_id
         print(f"-> Contrato ID {contrato_id} criado.")
@@ -103,7 +104,7 @@ class TestRealisticWorkflow(unittest.TestCase):
             }
             r = requests.post(f'{BASE_URL}/contratos/{contrato_id}/relatorios', data=form_data, files=files)
         os.remove(test_filename_1)
-        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.status_code, 201, f"Falha ao enviar relatório: {r.text}")
         relatorio_id = r.json()['id']
         self.__class__.created_ids['relatorio'] = relatorio_id
         print(f"-> Relatório ID {relatorio_id} enviado pelo fiscal.")
@@ -129,7 +130,7 @@ class TestRealisticWorkflow(unittest.TestCase):
             form_data = {'observacoes_fiscal': 'Correções aplicadas conforme solicitado.'}
             r = requests.put(f'{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}', data=form_data, files=files)
         os.remove(test_filename_2)
-        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.status_code, 200, f"Falha ao reenviar relatório: {r.text}")
         self.assertEqual(r.json()['status_id'], self.seed_ids['status_relatorio_pendente'])
         print(f"-> Relatório ID {relatorio_id} reenviado com sucesso e status 'Pendente de Análise'.")
         
