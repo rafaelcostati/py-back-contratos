@@ -12,12 +12,12 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def _handle_file_upload(contrato_id):
+def _handle_file_upload(contrato_id, file_key):
     """Função auxiliar interna para lidar com o processo de upload de arquivo."""
-    if 'arquivo' not in request.files:
-        raise ValueError("Nenhum arquivo enviado")
+    if file_key not in request.files:
+        raise ValueError(f"Nenhum arquivo encontrado com a chave '{file_key}'")
         
-    file = request.files['arquivo']
+    file = request.files[file_key]
     if file.filename == '':
         raise ValueError("Nome do arquivo não pode ser vazio")
 
@@ -27,11 +27,9 @@ def _handle_file_upload(contrato_id):
     filename = secure_filename(file.filename)
     filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
     
-    # Salva o arquivo no disco
     file.save(filepath)
     file_size = os.path.getsize(filepath)
 
-    # Cria o registro do arquivo no banco
     new_arquivo = arquivo_repo.create_arquivo(
         nome_arquivo=filename,
         path_armazenamento=filepath,
@@ -56,7 +54,7 @@ def submit_relatorio(contrato_id):
     filepath = None
     try:
         # 2. Lida com o upload do arquivo
-        new_arquivo = _handle_file_upload(contrato_id)
+        new_arquivo = _handle_file_upload(contrato_id, file_key='arquivo')
         filepath = new_arquivo['path_armazenamento']
 
         # 3. Prepara e cria o registro do relatório

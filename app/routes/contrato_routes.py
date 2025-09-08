@@ -6,19 +6,16 @@ bp = Blueprint('contratos', __name__, url_prefix='/contratos')
 
 @bp.route('', methods=['POST'])
 def create():
-    # Lógica para pegar dados de JSON ou Formulário
     data = request.form.to_dict() if request.form else request.get_json()
 
     if not data:
         return jsonify({'error': 'Nenhum dado enviado'}), 400
 
-    # Validações dos campos obrigatórios para um CONTRATO
     required_fields = ['nr_contrato', 'objeto', 'data_inicio', 'data_fim', 'contratado_id', 'modalidade_id', 'status_id', 'gestor_id', 'fiscal_id']
     for field in required_fields:
         if field not in data:
             return jsonify({'error': f'O campo "{field}" é obrigatório'}), 400
 
-    # Validações de existência dos IDs
     if contratado_repo.find_contratado_by_id(data['contratado_id']) is None: return jsonify({'error': 'Contratado não encontrado'}), 404
     if modalidade_repo.find_modalidade_by_id(data['modalidade_id']) is None: return jsonify({'error': 'Modalidade não encontrada'}), 404
     if status_repo.find_status_by_id(data['status_id']) is None: return jsonify({'error': 'Status não encontrado'}), 404
@@ -26,16 +23,18 @@ def create():
     if usuario_repo.find_user_by_id(data['fiscal_id']) is None: return jsonify({'error': 'Fiscal não encontrado'}), 404
         
     try:
-        # Lida com o anexo do contrato, se ele foi enviado
         if 'documento_contrato' in request.files:
             file = request.files['documento_contrato']
             if file and file.filename != '':
                 from .relatorio_routes import _handle_file_upload
-                new_arquivo = _handle_file_upload(data['contratado_id'])
+                # CORREÇÃO: Passamos o file_key correto para a função
+                new_arquivo = _handle_file_upload(data['contratado_id'], file_key='documento_contrato')
                 data['documento'] = new_arquivo['id']
 
         new_contrato = contrato_repo.create_contrato(data)
         return jsonify(new_contrato), 201
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
     except Exception as e:
         return jsonify({'error': f'Erro ao criar contrato: {e}'}), 500
 
