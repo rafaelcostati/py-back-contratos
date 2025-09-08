@@ -16,8 +16,6 @@ def create_statusrelatorio(nome):
         cursor.close()
     return new_item
 
-# --- ADICIONE ESTAS NOVAS FUNÇÕES ABAIXO ---
-
 def get_all_statusrelatorio():
     """Busca todos os status de relatório."""
     conn = get_db_connection()
@@ -36,10 +34,12 @@ def find_statusrelatorio_by_id(status_id):
     cursor.close()
     return item
 
-def find_statuspendencia_by_name(nome):
+
+def find_statusrelatorio_by_name(nome):
+    """Busca um status de relatório pelo nome."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT * FROM statuspendencia WHERE nome = %s", (nome,))
+    cursor.execute("SELECT * FROM statusrelatorio WHERE nome = %s", (nome,))
     item = cursor.fetchone()
     cursor.close()
     return item
