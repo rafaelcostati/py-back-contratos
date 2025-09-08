@@ -24,10 +24,15 @@ def handle_response(response):
     if 200 <= response.status_code < 300:
         print("✅ SUCESSO!")
         try:
-            pprint(response.json())
+            content = response.json()
+            if content:
+                pprint(content)
+            else:
+                print("(Operação bem-sucedida sem conteúdo de retorno)")
+            return content
         except json.JSONDecodeError:
-            print("(Nenhum conteúdo JSON na resposta)")
-        return response.json()
+            print("(Operação bem-sucedida sem conteúdo JSON na resposta)")
+        return True
     else:
         print(f"❌ ERRO! (Status Code: {response.status_code})")
         try:
@@ -49,9 +54,8 @@ def get_entities(endpoint):
             
             print(f"\n--- Itens disponíveis em {endpoint} ---")
             for item in entities:
-                # Tenta imprimir id e nome, senão imprime o objeto todo
                 if isinstance(item, dict) and 'id' in item and 'nome' in item:
-                     print(f"  ID: {item['id']} | Nome: {item['nome']}")
+                     print(f"  ID: {item['id']:<4} | Nome: {item['nome']}")
                 else:
                     pprint(item)
             return entities
@@ -62,10 +66,9 @@ def get_entities(endpoint):
         print("ERRO: Não foi possível conectar à API. O servidor Flask está rodando?")
         return None
 
-# --- Menus Principais ---
+# --- Menus de Atores (Admin, Fiscal, Gestor) ---
 
 def admin_menu():
-    """Menu de ações para o perfil Administrador."""
     while True:
         clear_screen()
         print(f"Você está atuando como: {CURRENT_USER['nome']} (Administrador)")
@@ -79,16 +82,11 @@ def admin_menu():
         if choice == '1':
             admin_contracts_menu()
         elif choice == '2':
-            print("Funcionalidade de gerenciar usuários a ser implementada.")
-            wait_for_enter()
+            manage_users_admin() # <<< FUNCIONALIDADE IMPLEMENTADA
         elif choice == '3':
-            print("Funcionalidade de gerenciar contratados a ser implementada.")
-            wait_for_enter()
+            manage_contractors_admin() # <<< FUNCIONALIDADE IMPLEMENTADA
         elif choice == '4':
             return
-        else:
-            print("Opção inválida.")
-            wait_for_enter()
 
 def fiscal_menu():
     """Menu de ações para o perfil Fiscal."""
@@ -102,17 +100,18 @@ def fiscal_menu():
 
         choice = input("> ")
         if choice == '1':
+            print("\nBuscando contratos onde você é fiscal...")
             contratos = get_entities(f"/contratos?fiscal_id={CURRENT_USER['id']}")
             if contratos:
                 for contrato in contratos:
-                    print(f"\n--- Pendências/Relatórios do Contrato ID {contrato['id']} ---")
-                    # Busca e exibe pendências
-                    pendencias = requests.get(f"{BASE_URL}/contratos/{contrato['id']}/pendencias").json()
-                    if pendencias:
-                        print("Pendências:")
-                        pprint(pendencias)
-                    else:
-                        print("Nenhuma pendência encontrada.")
+                    print(f"\n--- Detalhes do Contrato ID {contrato['id']} ({contrato.get('nr_contrato', '')}) ---")
+                    
+                    pendencias_url = f"/contratos/{contrato['id']}/pendencias"
+                    get_entities(pendencias_url)
+
+                    # A API precisa de uma rota para listar relatórios de um contrato
+                    # get_entities(f"/contratos/{contrato['id']}/relatorios")
+                    
             wait_for_enter()
         elif choice == '2':
             submit_report_flow()
@@ -141,7 +140,7 @@ def gestor_menu():
             print("Opção inválida.")
             wait_for_enter()
 
-# --- Submenus e Fluxos ---
+# --- Submenus de Gerenciamento ---
 
 def admin_contracts_menu():
     """Submenu do Admin para gerenciar contratos."""
@@ -150,24 +149,295 @@ def admin_contracts_menu():
         print(f"Você está atuando como: {CURRENT_USER['nome']} (Admin)")
         print("--- Gerenciamento de Contratos ---")
         print("1. Listar TODOS os Contratos")
-        print("2. Criar Novo Contrato")
-        print("3. Criar Pendência para um Contrato")
-        print("4. Analisar um Relatório")
-        print("5. Voltar ao menu principal")
+        print("2. Ver Detalhes de um Contrato")
+        print("3. Criar Novo Contrato")
+        print("4. Atualizar um Contrato")
+        print("5. Deletar (Desativar) um Contrato")
+        print("6. Criar Pendência para um Contrato")
+        print("7. Analisar um Relatório")
+        print("8. Voltar ao menu principal")
 
         choice = input("> ")
         if choice == '1':
             get_entities("/contratos")
             wait_for_enter()
         elif choice == '2':
-            create_contract_flow()
+            get_contract_details_flow()
         elif choice == '3':
-            create_pendencia_flow()
+            create_contract_flow()
         elif choice == '4':
+            update_contract_flow()
+        elif choice == '5':
+            delete_contract_flow()
+        elif choice == '6':
+            create_pendencia_flow()
+        elif choice == '7':
             analise_relatorio_flow()
+        elif choice == '8':
+            return
+
+def get_contract_details_flow():
+    clear_screen()
+    print("--- DETALHES DO CONTRATO ---")
+    if not get_entities("/contratos"):
+        wait_for_enter()
+        return
+    try:
+        contrato_id = int(input("\nDigite o ID do contrato para ver os detalhes: "))
+        response = requests.get(f"{BASE_URL}/contratos/{contrato_id}")
+        handle_response(response)
+    except ValueError:
+        print("ID inválido.")
+    wait_for_enter()
+
+def update_contract_flow():
+    clear_screen()
+    print("--- ATUALIZAR CONTRATO ---")
+    if not get_entities("/contratos"):
+        wait_for_enter()
+        return
+    try:
+        contrato_id = int(input("\nDigite o ID do contrato a ser atualizado: "))
+        print("Deixe o campo em branco para não alterar.")
+        payload = {}
+        
+        objeto = input("Novo objeto do contrato: ")
+        if objeto: payload['objeto'] = objeto
+
+        nr_contrato = input(f"Novo número do contrato: ")
+        if nr_contrato: payload['nr_contrato'] = nr_contrato
+
+        if not payload:
+            print("Nenhum dado para atualizar.")
+            wait_for_enter()
+            return
+        
+        response = requests.patch(f"{BASE_URL}/contratos/{contrato_id}", json=payload)
+        handle_response(response)
+    except ValueError:
+        print("ID inválido.")
+    wait_for_enter()
+
+def delete_contract_flow():
+    clear_screen()
+    print("--- DELETAR (DESATIVAR) CONTRATO ---")
+    if not get_entities("/contratos"):
+        wait_for_enter()
+        return
+    try:
+        contrato_id = int(input("\nDigite o ID do contrato a ser desativado: "))
+        confirm = input(f"Tem certeza que deseja desativar o contrato ID {contrato_id}? [s/N]: ")
+        if confirm.lower() == 's':
+            response = requests.delete(f"{BASE_URL}/contratos/{contrato_id}")
+            handle_response(response)
+        else:
+            print("Operação cancelada.")
+    except ValueError:
+        print("ID inválido.")
+    wait_for_enter()
+    
+def manage_users_admin():
+    """Submenu do Admin para gerenciar usuários."""
+    while True:
+        clear_screen()
+        print(f"Você está atuando como: {CURRENT_USER['nome']} (Admin)")
+        print("--- Gerenciamento de Usuários ---")
+        print("1. Listar todos os Usuários")
+        print("2. Criar Novo Usuário")
+        print("3. Atualizar Usuário")
+        print("4. Deletar Usuário (Desativar)")
+        print("5. Resetar Senha de um Usuário")
+        print("6. Voltar ao menu principal")
+
+        choice = input("> ")
+        if choice == '1':
+            get_entities("/usuarios")
+            wait_for_enter()
+        elif choice == '2':
+            create_user_flow()
+        elif choice == '3':
+            update_user_flow()
+        elif choice == '4':
+            delete_user_flow()
+        elif choice == '5':
+            reset_password_flow()
+        elif choice == '6':
+            return
+
+def manage_contractors_admin():
+    """Submenu do Admin para gerenciar contratados."""
+    while True:
+        clear_screen()
+        print(f"Você está atuando como: {CURRENT_USER['nome']} (Admin)")
+        print("--- Gerenciamento de Contratados ---")
+        print("1. Listar todos os Contratados")
+        print("2. Criar Novo Contratado")
+        print("3. Atualizar Contratado")
+        print("4. Deletar Contratado (Desativar)")
+        print("5. Voltar ao menu principal")
+
+        choice = input("> ")
+        if choice == '1':
+            get_entities("/contratados")
+            wait_for_enter()
+        elif choice == '2':
+            create_contractor_flow()
+        elif choice == '3':
+            update_contractor_flow()
+        elif choice == '4':
+            delete_contractor_flow()
         elif choice == '5':
             return
 
+# --- Fluxos de Ações ---
+
+def create_user_flow():
+    clear_screen()
+    print("--- CRIAR NOVO USUÁRIO ---")
+    payload = {
+        'nome': input("Nome: "),
+        'email': input("Email: "),
+        'cpf': input("CPF (apenas números): "),
+        'matricula': input("Matrícula (opcional): "),
+        'senha': input("Senha: ")
+    }
+    if get_entities("/perfis"):
+        payload['perfil_id'] = int(input("ID do Perfil: "))
+    
+    print("\nEnviando dados...")
+    response = requests.post(f"{BASE_URL}/usuarios", json=payload)
+    handle_response(response)
+    wait_for_enter()
+
+def update_user_flow():
+    clear_screen()
+    print("--- ATUALIZAR USUÁRIO ---")
+    users = get_entities("/usuarios")
+    if not users:
+        wait_for_enter()
+        return
+    
+    user_id = int(input("\nDigite o ID do usuário que deseja atualizar: "))
+    print("Deixe o campo em branco para não alterar.")
+    
+    payload = {}
+    nome = input("Novo nome: ")
+    if nome: payload['nome'] = nome
+    
+    email = input("Novo email: ")
+    if email: payload['email'] = email
+
+    if not payload:
+        print("Nenhum dado para atualizar.")
+        wait_for_enter()
+        return
+        
+    print("\nEnviando dados...")
+    response = requests.patch(f"{BASE_URL}/usuarios/{user_id}", json=payload)
+    handle_response(response)
+    wait_for_enter()
+
+def delete_user_flow():
+    clear_screen()
+    print("--- DELETAR (DESATIVAR) USUÁRIO ---")
+    users = get_entities("/usuarios")
+    if not users:
+        wait_for_enter()
+        return
+    
+    user_id = int(input("\nDigite o ID do usuário que deseja deletar (desativar): "))
+    confirm = input(f"Tem certeza que deseja desativar o usuário ID {user_id}? [s/N]: ")
+
+    if confirm.lower() == 's':
+        print("\nEnviando requisição...")
+        response = requests.delete(f"{BASE_URL}/usuarios/{user_id}")
+        handle_response(response)
+    else:
+        print("Operação cancelada.")
+    wait_for_enter()
+
+def reset_password_flow():
+    clear_screen()
+    print("--- RESETAR SENHA DE USUÁRIO ---")
+    users = get_entities("/usuarios")
+    if not users:
+        wait_for_enter()
+        return
+    
+    user_id = int(input("\nDigite o ID do usuário para resetar a senha: "))
+    nova_senha = input("Digite a NOVA senha: ")
+
+    print("\nEnviando dados...")
+    response = requests.patch(f"{BASE_URL}/usuarios/{user_id}/resetar-senha", json={'nova_senha': nova_senha})
+    handle_response(response)
+    wait_for_enter()
+
+def create_contractor_flow():
+    clear_screen()
+    print("--- CRIAR NOVO CONTRATADO ---")
+    payload = {
+        'nome': input("Nome/Razão Social: "),
+        'email': input("Email de contato: "),
+        'cnpj': input("CNPJ (opcional, apenas números): "),
+        'cpf': input("CPF (opcional, apenas números): "),
+        'telefone': input("Telefone (opcional): ")
+    }
+    print("\nEnviando dados...")
+    response = requests.post(f"{BASE_URL}/contratados", json=payload)
+    handle_response(response)
+    wait_for_enter()
+
+def update_contractor_flow():
+    clear_screen()
+    print("--- ATUALIZAR CONTRATADO ---")
+    contractors = get_entities("/contratados")
+    if not contractors:
+        wait_for_enter()
+        return
+    
+    contractor_id = int(input("\nDigite o ID do contratado que deseja atualizar: "))
+    print("Deixe o campo em branco para não alterar.")
+    
+    payload = {}
+    nome = input("Novo nome/razão social: ")
+    if nome: payload['nome'] = nome
+    
+    email = input("Novo email: ")
+    if email: payload['email'] = email
+    
+    telefone = input("Novo telefone: ")
+    if telefone: payload['telefone'] = telefone
+
+    if not payload:
+        print("Nenhum dado para atualizar.")
+        wait_for_enter()
+        return
+        
+    print("\nEnviando dados...")
+    response = requests.patch(f"{BASE_URL}/contratados/{contractor_id}", json=payload)
+    handle_response(response)
+    wait_for_enter()
+
+def delete_contractor_flow():
+    clear_screen()
+    print("--- DELETAR (DESATIVAR) CONTRATADO ---")
+    contractors = get_entities("/contratados")
+    if not contractors:
+        wait_for_enter()
+        return
+    
+    contractor_id = int(input("\nDigite o ID do contratado que deseja deletar (desativar): "))
+    confirm = input(f"Tem certeza que deseja desativar o contratado ID {contractor_id}? [s/N]: ")
+
+    if confirm.lower() == 's':
+        print("\nEnviando requisição...")
+        response = requests.delete(f"{BASE_URL}/contratados/{contractor_id}")
+        handle_response(response)
+    else:
+        print("Operação cancelada.")
+    wait_for_enter()
+
+# --- Copie e cole as funções que não mudaram ---
 def create_contract_flow():
     """Fluxo guiado para criar um novo contrato."""
     clear_screen()
@@ -243,9 +513,11 @@ def submit_report_flow():
         'observacoes_fiscal': input("Observações (opcional): ")
     }
     
-    # Assumindo que o status inicial é "Pendente de Análise"
-    # O ideal seria buscar o ID pelo nome
-    form_data['status_id'] = 1 
+    status_relatorios = get_entities("/statusrelatorio")
+    if not status_relatorios:
+        wait_for_enter()
+        return
+    form_data['status_id'] = int(input("ID do Status do Relatório: "))
 
     print("\nEnviando arquivo e dados para a API...")
     try:
@@ -268,11 +540,13 @@ def analise_relatorio_flow():
         return
     contrato_id = int(input("De qual Contrato (ID) você quer ver os relatórios? "))
     
+    print(f"\nBuscando relatórios para o contrato {contrato_id}...")
     # Aqui seria ideal ter uma rota para listar relatórios
-    print(f"Funcionalidade de listar relatórios do contrato {contrato_id} a ser implementada.")
+    # Por enquanto, pediremos o ID diretamente
+    print("Funcionalidade de listar relatórios do contrato a ser implementada.")
     relatorio_id = int(input("Qual Relatório (ID) você quer analisar? "))
 
-    print("Opções de Status de Relatório:")
+    print("\nOpções de Status de Relatório:")
     status_relatorios = get_entities("/statusrelatorio")
     if not status_relatorios:
         wait_for_enter()
@@ -291,8 +565,6 @@ def analise_relatorio_flow():
     handle_response(response)
     wait_for_enter()
 
-
-# --- Ponto de Entrada ---
 def main():
     """Função principal que inicia o seletor de perfil."""
     global CURRENT_USER
@@ -304,7 +576,7 @@ def main():
         
         users = get_entities("/usuarios")
         if not users:
-            print("\nNão foi possível buscar usuários. Saindo.")
+            print("\nNão foi possível buscar usuários. O servidor está rodando? Saindo.")
             break
             
         choice = input("\nDigite o ID do usuário para assumir o papel (ou 'sair'): ")
@@ -319,12 +591,16 @@ def main():
                 if user['id'] == user_id:
                     CURRENT_USER = user
                     user_found = True
-                    # Busca o nome do perfil
                     perfil_id = user['perfil_id']
-                    # A API de perfis precisaria de um GET by ID
-                    # Por simplicidade, vamos mapear aqui
-                    perfil_map = {1: 'Administrador', 2: 'Gestor', 3: 'Fiscal'}
-                    perfil_nome = perfil_map.get(perfil_id, "Desconhecido")
+                    
+                    # Busca o nome do perfil dinamicamente via API
+                    perfil_nome = "Desconhecido"
+                    perfis = get_entities("/perfis")
+                    if perfis:
+                        for perfil in perfis:
+                            if perfil['id'] == perfil_id:
+                                perfil_nome = perfil['nome']
+                                break
                     
                     if perfil_nome == 'Administrador':
                         admin_menu()
@@ -339,9 +615,14 @@ def main():
             if not user_found:
                 print("ID de usuário inválido.")
                 wait_for_enter()
-        except ValueError:
+        except (ValueError, TypeError):
             print("Entrada inválida. Por favor, digite um número de ID.")
             wait_for_enter()
 
+
 if __name__ == "__main__":
+    # Carrega as funções que não mudaram para o escopo global
+    fiscal_menu = globals().get('fiscal_menu', fiscal_menu)
+    gestor_menu = globals().get('gestor_menu', gestor_menu)
+    admin_contracts_menu = globals().get('admin_contracts_menu', admin_contracts_menu)
     main()
