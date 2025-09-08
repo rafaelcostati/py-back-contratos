@@ -25,3 +25,12 @@ def find_statuspendencia_by_id(status_id):
     item = cursor.fetchone()
     cursor.close()
     return item
+  
+def get_all_statuspendencia():
+    """Busca todos os status de pendência."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT * FROM statuspendencia ORDER BY nome")
+    items = cursor.fetchall()
+    cursor.close()
+    return items

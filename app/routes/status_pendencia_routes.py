@@ -14,3 +14,8 @@ def create():
         return jsonify(new_item), 201
     except Exception as e:
         return jsonify({'error': f'Erro ao criar status de pendência: {e}'}), 409
+    
+@bp.route('', methods=['GET'])
+def list_all():
+    items = status_pendencia_repo.get_all_statuspendencia()
+    return jsonify(items), 200

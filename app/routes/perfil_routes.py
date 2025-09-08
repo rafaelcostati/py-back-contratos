@@ -15,7 +15,7 @@ def create():
     except Exception as e:
         return jsonify({'error': f'Erro ao criar perfil: {e}'}), 409
 
-@bp.route('/', methods=['GET'])
+@bp.route('', methods=['GET'])
 def list_all():
     items = perfil_repo.get_all_perfis()
     return jsonify(items), 200

@@ -15,7 +15,7 @@ def create():
     except Exception as e:
         return jsonify({'error': f'Erro ao criar status: {e}'}), 409
 
-@bp.route('/', methods=['GET'])
+@bp.route('', methods=['GET'])
 def list_all():
     items = status_repo.get_all_status()
     return jsonify(items), 200

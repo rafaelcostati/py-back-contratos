@@ -20,11 +20,17 @@ class TestRealisticWorkflow(unittest.TestCase):
         cls.seed_ids = {}
 
         def get_id_by_name(endpoint, name):
-            r = requests.get(f"{BASE_URL}{endpoint}")
-            assert r.status_code == 200, f"Falha ao buscar dados de {endpoint}"
+            
+            if endpoint.startswith('/'):
+                endpoint = endpoint[1:]
+                
+            url = f"{BASE_URL}/{endpoint}"
+            r = requests.get(url)
+            assert r.status_code == 200, f"Falha ao buscar dados de {url}. Resposta: {r.text}"
             for item in r.json():
-                if item['nome'] == name: return item['id']
-            raise Exception(f"'{name}' não encontrado em {endpoint}. O banco foi populado com 'flask seed-db'?")
+                if item['nome'] == name:
+                    return item['id']
+            raise Exception(f"'{name}' não encontrado em {url}. O banco foi populado com 'flask seed-db'?")
 
         print("-> Buscando IDs dos dados do seed...")
         cls.seed_ids['perfil_gestor'] = get_id_by_name('/perfis', 'Gestor')

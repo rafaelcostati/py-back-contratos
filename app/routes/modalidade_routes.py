@@ -15,7 +15,7 @@ def create():
     except Exception as e:
         return jsonify({'error': f'Erro ao criar modalidade: {e}'}), 409
 
-@bp.route('/', methods=['GET'])
+@bp.route('', methods=['GET'])
 def list_all():
     items = modalidade_repo.get_all_modalidades()
     return jsonify(items), 200
