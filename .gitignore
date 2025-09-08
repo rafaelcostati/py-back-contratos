@@ -1,0 +1,7 @@
+/venv
+teste_full_workflow.py
+reset_database.py
+.env
+*.pyc
+uploads/
+__pycache__/
