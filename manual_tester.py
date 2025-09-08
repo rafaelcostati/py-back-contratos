@@ -607,31 +607,41 @@ def analise_relatorio_flow():
     if not get_entities("/contratos"):
         wait_for_enter()
         return
-    contrato_id = int(input("De qual Contrato (ID) você quer ver os relatórios? "))
     
-    print(f"\nBuscando relatórios para o contrato {contrato_id}...")
-    # Aqui seria ideal ter uma rota para listar relatórios
-    # Por enquanto, pediremos o ID diretamente
-    print("Funcionalidade de listar relatórios do contrato a ser implementada.")
-    relatorio_id = int(input("Qual Relatório (ID) você quer analisar? "))
+    try:
+        contrato_id = int(input("De qual Contrato (ID) você quer ver os relatórios? "))
+        
+        print(f"\nBuscando relatórios para o contrato {contrato_id}...")
+        
+        # CORREÇÃO: Chama a nova rota para listar os relatórios
+        relatorios = get_entities(f"/contratos/{contrato_id}/relatorios")
+        if not relatorios:
+            wait_for_enter()
+            return
 
-    print("\nOpções de Status de Relatório:")
-    status_relatorios = get_entities("/statusrelatorio")
-    if not status_relatorios:
-        wait_for_enter()
-        return
-    
-    status_id = int(input("Qual o novo Status (ID) para este relatório? "))
-    observacoes = input("Observações da análise (obrigatório se for rejeitado): ")
+        relatorio_id = int(input("\nQual Relatório (ID) você quer analisar? "))
 
-    payload = {
-        "aprovador_usuario_id": CURRENT_USER['id'],
-        "status_id": status_id,
-        "observacoes_aprovador": observacoes
-    }
+        print("\nOpções de Status de Relatório:")
+        status_relatorios = get_entities("/statusrelatorio")
+        if not status_relatorios:
+            wait_for_enter()
+            return
+        
+        status_id = int(input("Qual o novo Status (ID) para este relatório? "))
+        observacoes = input("Observações da análise (obrigatório se for rejeitado): ")
+
+        payload = {
+            "aprovador_usuario_id": CURRENT_USER['id'],
+            "status_id": status_id,
+            "observacoes_aprovador": observacoes
+        }
+        
+        response = requests.patch(f"{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}/analise", json=payload)
+        handle_response(response)
+
+    except (ValueError, TypeError):
+        print("Entrada inválida. Por favor, digite um número de ID.")
     
-    response = requests.patch(f"{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}/analise", json=payload)
-    handle_response(response)
     wait_for_enter()
 
 def main():
@@ -688,9 +698,12 @@ def main():
             wait_for_enter()
 
 
+
 if __name__ == "__main__":
     # Carrega as funções que não mudaram para o escopo global
     fiscal_menu = globals().get('fiscal_menu', fiscal_menu)
     gestor_menu = globals().get('gestor_menu', gestor_menu)
     admin_contracts_menu = globals().get('admin_contracts_menu', admin_contracts_menu)
     main()
+    
+    

@@ -144,3 +144,15 @@ def reenviar_relatorio(contrato_id, relatorio_id):
         if filepath and os.path.exists(filepath):
             os.remove(filepath)
         return jsonify({'error': f'Erro ao reenviar o relatório: {e}'}), 500
+    
+@bp.route('', methods=['GET'])
+def list_relatorios(contrato_id):
+    """Lista todos os relatórios de um contrato específico."""
+    if contrato_repo.find_contrato_by_id(contrato_id) is None:
+        return jsonify({'error': 'Contrato não encontrado'}), 404
+    
+    try:
+        relatorios = relatorio_repo.get_relatorios_by_contrato_id(contrato_id)
+        return jsonify(relatorios), 200
+    except Exception as e:
+        return jsonify({'error': f'Erro ao buscar relatórios: {e}'}), 500
