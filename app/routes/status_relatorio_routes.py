@@ -14,3 +14,9 @@ def create():
         return jsonify(new_item), 201
     except Exception as e:
         return jsonify({'error': f'Erro ao criar status de relatório: {e}'}), 409
+
+
+@bp.route('', methods=['GET'])
+def list_all():
+    items = status_relatorio_repo.get_all_statusrelatorio()
+    return jsonify(items), 200

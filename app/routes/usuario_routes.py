@@ -1,13 +1,12 @@
 # app/routes/usuario_routes.py
 from flask import Blueprint, request, jsonify
-# Importamos check_password_hash para verificar a senha antiga
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.repository import usuario_repo
 
 bp = Blueprint('usuarios', __name__, url_prefix='/usuarios')
 
 # --- ROTAS EXISTENTES (CRUD) ---
-@bp.route('/', methods=['POST'])
+@bp.route('', methods=['POST'])
 def create():
     data = request.get_json()
     if not data or not all(k in data for k in ('nome', 'email', 'senha')):
@@ -25,7 +24,7 @@ def create():
     except Exception as e:
         return jsonify({'error': f'Erro ao criar usuário: {e}'}), 409
 
-@bp.route('/', methods=['GET'])
+@bp.route('', methods=['GET'])
 def list_all():
     users = usuario_repo.get_all_users()
     return jsonify(users), 200
