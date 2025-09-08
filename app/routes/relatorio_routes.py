@@ -2,7 +2,7 @@
 import os
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
-from app.repository import relatorio_repo, arquivo_repo, contrato_repo, usuario_repo, status_relatorio_repo, pendencia_repo
+from app.repository import relatorio_repo, arquivo_repo, contrato_repo, status_pendencia_repo, usuario_repo, status_relatorio_repo, pendencia_repo
 
 bp = Blueprint('relatorios', __name__, url_prefix='/contratos/<int:contrato_id>/relatorios')
 
@@ -41,46 +41,51 @@ def _handle_file_upload(contrato_id, file_key):
 
 @bp.route('', methods=['POST'])
 def submit_relatorio(contrato_id):
-    """Endpoint para um fiscal/gestor submeter um novo relatório com arquivo."""
-    # 1. Validações iniciais
+    """Endpoint para um fiscal submeter um relatório EM RESPOSTA A UMA PENDÊNCIA."""
     if contrato_repo.find_contrato_by_id(contrato_id) is None:
         return jsonify({'error': 'Contrato não encontrado'}), 404
         
     form_data = request.form
-    required_fields = ['mes_competencia', 'fiscal_usuario_id', 'status_id']
+    # Validação do fluxo de negócio
+    if 'pendencia_id' not in form_data:
+        return jsonify({'error': 'É obrigatório informar o ID da pendência (pendencia_id) à qual este relatório responde.'}), 400
+
+    required_fields = ['mes_competencia', 'fiscal_usuario_id']
     if not all(field in form_data for field in required_fields):
         return jsonify({'error': f'Campos de formulário obrigatórios: {required_fields}'}), 400
 
     filepath = None
     try:
-        # 2. Lida com o upload do arquivo
+        # Busca os IDs dos status que vamos setar automaticamente
+        status_relatorio_pendente = status_relatorio_repo.find_statusrelatorio_by_name('Pendente de Análise')
+        status_pendencia_concluida = status_pendencia_repo.find_statuspendencia_by_name('Concluída')
+        
+        if not status_relatorio_pendente or not status_pendencia_concluida:
+            return jsonify({'error': 'Status padrão não encontrados no banco. Execute o seeder.'}), 500
+
         new_arquivo = _handle_file_upload(contrato_id, file_key='arquivo')
         filepath = new_arquivo['path_armazenamento']
 
-        # 3. Prepara e cria o registro do relatório
         relatorio_data = {
             'contrato_id': contrato_id,
             'arquivo_id': new_arquivo['id'],
             'fiscal_usuario_id': form_data['fiscal_usuario_id'],
-            'status_id': form_data['status_id'],
             'mes_competencia': form_data['mes_competencia'],
             'observacoes_fiscal': form_data.get('observacoes_fiscal'),
-            'pendencia_id': form_data.get('pendencia_id')
+            'pendencia_id': form_data.get('pendencia_id'),
+            'status_id': status_relatorio_pendente['id']
         }
         
         new_relatorio = relatorio_repo.create_relatorio(relatorio_data)
         
-        # (Opcional) Se respondeu a uma pendência, atualiza o status dela para "Concluída"
-        if relatorio_data.get('pendencia_id'):
-            # pendencia_repo.update_status(relatorio_data['pendencia_id'], status_concluida_id)
-            pass
+        
+        pendencia_repo.update_pendencia_status(relatorio_data['pendencia_id'], status_pendencia_concluida['id'])
 
         return jsonify(new_relatorio), 201
 
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 400
     except Exception as e:
-        # Em caso de erro, remove o arquivo que pode ter sido salvo
         if filepath and os.path.exists(filepath):
             os.remove(filepath)
         return jsonify({'error': f'Erro ao processar o relatório: {e}'}), 500

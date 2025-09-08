@@ -559,14 +559,71 @@ def create_pendencia_flow():
     wait_for_enter()
 
 def submit_report_flow():
-    """Fluxo guiado para o Fiscal submeter um relatório."""
+    """Fluxo guiado e CORRIGIDO para o Fiscal submeter um relatório."""
     clear_screen()
-    print("--- SUBMETER RELATÓRIO ---")
+    print("--- SUBMETER RELATÓRIO DE PENDÊNCIA ---")
     
+    print("\nBuscando contratos com pendências para você...")
     contratos = get_entities(f"/contratos?fiscal_id={CURRENT_USER['id']}")
     if not contratos:
         wait_for_enter()
         return
+
+    # Mostra apenas as pendências que estão com o status "Pendente"
+    pendencias_disponiveis = []
+    for contrato in contratos:
+        pendencias = requests.get(f"{BASE_URL}/contratos/{contrato['id']}/pendencias").json()
+        if pendencias:
+            for p in pendencias:
+                if p['status_nome'] == 'Pendente' or p['status_nome'] == 'Rejeitado com Pendência':
+                    print(f"\nContrato ID: {contrato['id']} - {contrato.get('nr_contrato')}")
+                    print(f"  -> Pendência ID: {p['id']} | Descrição: {p['descricao']}")
+                    print(f"     Prazo: {p['data_prazo']}")
+                    pendencias_disponiveis.append(p)
+    
+    if not pendencias_disponiveis:
+        print("\nNenhuma pendência ativa encontrada para os seus contratos.")
+        wait_for_enter()
+        return
+
+    try:
+        pendencia_id = int(input("\nPara qual Pendência (ID) é este relatório? "))
+        
+        # Encontra o contrato_id a partir da pendência escolhida
+        contrato_id = None
+        for p in pendencias_disponiveis:
+            if p['id'] == pendencia_id:
+                contrato_id = p['contrato_id']
+                break
+        if not contrato_id:
+            print("ID de pendência inválido.")
+            wait_for_enter()
+            return
+
+        filepath = input("Digite o caminho completo para o arquivo (ex: /home/user/relatorio.pdf): ")
+        if not os.path.exists(filepath):
+            print("ERRO: Arquivo não encontrado.")
+            wait_for_enter()
+            return
+
+        form_data = {
+            'mes_competencia': input("Mês de Competência (AAAA-MM-DD): "),
+            'fiscal_usuario_id': CURRENT_USER['id'],
+            'observacoes_fiscal': input("Observações (opcional): "),
+            'pendencia_id': pendencia_id
+        }
+        
+        print("\nEnviando arquivo e dados para a API...")
+        with open(filepath, "rb") as f:
+            filename = os.path.basename(filepath)
+            files = {'arquivo': (filename, f)}
+            response = requests.post(f'{BASE_URL}/contratos/{contrato_id}/relatorios', data=form_data, files=files)
+        handle_response(response)
+
+    except (ValueError, TypeError):
+        print("Entrada inválida.")
+    
+    wait_for_enter()
 
     contrato_id = int(input("Para qual Contrato (ID) é este relatório? "))
     

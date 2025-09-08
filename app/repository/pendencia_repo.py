@@ -47,3 +47,19 @@ def get_pendencias_by_contrato_id(contrato_id):
     pendencias = cursor.fetchall()
     cursor.close()
     return pendencias
+
+def update_pendencia_status(pendencia_id, status_id):
+    """Atualiza o status de uma pendência específica."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    sql = "UPDATE pendenciarelatorio SET status_pendencia_id = %s WHERE id = %s RETURNING *"
+    try:
+        cursor.execute(sql, (status_id, pendencia_id))
+        updated_pendencia = cursor.fetchone()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cursor.close()
+    return updated_pendencia

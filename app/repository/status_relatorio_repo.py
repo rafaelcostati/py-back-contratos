@@ -35,3 +35,11 @@ def find_statusrelatorio_by_id(status_id):
     item = cursor.fetchone()
     cursor.close()
     return item
+
+def find_statuspendencia_by_name(nome):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT * FROM statuspendencia WHERE nome = %s", (nome,))
+    item = cursor.fetchone()
+    cursor.close()
+    return item

@@ -34,3 +34,11 @@ def get_all_statuspendencia():
     items = cursor.fetchall()
     cursor.close()
     return items
+
+def find_statuspendencia_by_name(nome):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT * FROM statuspendencia WHERE nome = %s", (nome,))
+    item = cursor.fetchone()
+    cursor.close()
+    return item
