@@ -116,20 +116,14 @@ def get_relatorios_by_contrato_id(contrato_id):
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     sql = """
         SELECT
-            rf.id,
-            rf.mes_competencia,
-            rf.observacoes_fiscal,
-            rf.created_at as data_envio,
-            u.nome as enviado_por,
-            s.nome as status_relatorio,
-            a.id as arquivo_id,
-            a.nome_arquivo
+            rf.id, rf.mes_competencia, rf.observacoes_fiscal,
+            rf.created_at as data_envio, u.nome as enviado_por,
+            s.nome as status_relatorio, a.id as arquivo_id, a.nome_arquivo
         FROM relatoriofiscal rf
         LEFT JOIN usuario u ON rf.fiscal_usuario_id = u.id
         LEFT JOIN statusrelatorio s ON rf.status_id = s.id
         LEFT JOIN arquivo a ON rf.arquivo_id = a.id
-        WHERE rf.contrato_id = %s
-        ORDER BY rf.created_at DESC
+        WHERE rf.contrato_id = %s ORDER BY rf.created_at DESC
     """
     cursor.execute(sql, (contrato_id,))
     relatorios = cursor.fetchall()

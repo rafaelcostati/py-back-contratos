@@ -5,23 +5,23 @@ from app.repository import arquivo_repo
 
 bp = Blueprint('arquivos', __name__, url_prefix='/arquivos')
 
-@bp.route('/<int:arquivo_id>')
+@bp.route('/<int:arquivo_id>/download')
 def download_file(arquivo_id):
     """Serve um arquivo para visualização/download."""
     try:
-        # Busca o arquivo no banco para obter seu caminho
         arquivo = arquivo_repo.find_arquivo_by_id(arquivo_id)
-        if not arquivo:
-            abort(404, description="Arquivo não encontrado no banco de dados.")
+        if not arquivo or not arquivo.get('path_armazenamento'):
+            abort(404, description="Arquivo não encontrado.")
 
-        # Pega o diretório e o nome do arquivo
         directory = os.path.dirname(arquivo['path_armazenamento'])
         filename = os.path.basename(arquivo['path_armazenamento'])
 
-        # Usa a função segura do Flask para servir o arquivo
-        return send_from_directory(directory, filename, as_attachment=False)
+        if not os.path.exists(os.path.join(directory, filename)):
+            abort(404, description="Arquivo físico não encontrado no servidor.")
+
+        # 'as_attachment=True' força o download. Mude para False para tentar abrir no navegador.
+        return send_from_directory(directory, filename, as_attachment=True)
 
     except Exception as e:
-        # Adiciona um log do erro no servidor para depuração
-        current_app.logger.error(f"Erro ao tentar servir o arquivo ID {arquivo_id}: {e}")
-        abort(500, description="Erro interno ao tentar acessar o arquivo.")
+        current_app.logger.error(f"Erro ao servir arquivo ID {arquivo_id}: {e}")
+        abort(500, description="Erro interno ao acessar o arquivo.")

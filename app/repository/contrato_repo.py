@@ -80,7 +80,8 @@ def get_all_contratos(filters=None):
 def find_contrato_by_id(contrato_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # Query ATUALIZADA com JOIN para a tabela de arquivo
+    # --- QUERY ATUALIZADA ---
+    # Adicionamos um JOIN com a tabela 'arquivo' para buscar o nome do documento do contrato
     sql = """
         SELECT
             c.*,
@@ -98,7 +99,7 @@ def find_contrato_by_id(contrato_id):
         LEFT JOIN usuario gestor ON c.gestor_id = gestor.id
         LEFT JOIN usuario fiscal ON c.fiscal_id = fiscal.id
         LEFT JOIN usuario fiscal_sub ON c.fiscal_substituto_id = fiscal_sub.id
-        LEFT JOIN arquivo doc ON c.documento = doc.id
+        LEFT JOIN arquivo doc ON c.documento::int = doc.id
         WHERE c.id = %s AND c.ativo = TRUE
     """
     cursor.execute(sql, (contrato_id,))

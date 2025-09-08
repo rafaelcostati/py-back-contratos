@@ -52,7 +52,7 @@ def get_by_id(id):
         return jsonify({'error': 'Contrato não encontrado'}), 404
     
     # Busca os relatórios fiscais associados a este contrato
-    relatorios = relatorio_repo.find_relatorios_by_contrato_id(id)
+    relatorios = relatorio_repo.get_relatorios_by_contrato_id(id)
     
     # Adiciona a lista de relatórios ao objeto do contrato
     contrato['relatorios_fiscais'] = relatorios

@@ -178,41 +178,37 @@ def get_contract_details_flow():
         contrato_id = int(input("\nDigite o ID do contrato para ver os detalhes: "))
         response = requests.get(f"{BASE_URL}/contratos/{contrato_id}")
         
-        # A função handle_response agora só imprime os dados brutos
-        # Vamos fazer uma impressão mais bonita aqui
         print("-" * 50)
         if response.status_code == 200:
             print("✅ SUCESSO! Detalhes do Contrato:")
             data = response.json()
             
-            # Imprime os dados principais do contrato
             for key, value in data.items():
                 if key != 'relatorios_fiscais':
                     print(f"  - {key}: {value}")
 
-            # Imprime o link do documento principal do contrato
             if data.get('documento') and data.get('documento_nome_arquivo'):
-                print("\n--- Documento do Contrato ---")
+                print("\n--- Documento Principal do Contrato ---")
                 print(f"  Nome do Arquivo: {data['documento_nome_arquivo']}")
-                print(f"  Link para Download: {BASE_URL}/arquivos/{data['documento']}")
+                print(f"  Link para Download: {BASE_URL}/arquivos/{data['documento']}/download")
             
-            # Imprime a lista de relatórios fiscais com seus links
             if data.get('relatorios_fiscais'):
                 print("\n--- Relatórios Fiscais Vinculados ---")
                 for relatorio in data['relatorios_fiscais']:
-                    print(f"  - Relatório ID: {relatorio['id']}")
-                    print(f"    Status: {relatorio['status_relatorio']}")
-                    print(f"    Arquivo: {relatorio['nome_arquivo']}")
-                    print(f"    Link para Download: {BASE_URL}/arquivos/{relatorio['arquivo_id']}")
+                    print(f"  > Relatório ID: {relatorio['id']} | Status: {relatorio['status_relatorio']}")
+                    print(f"    Arquivo: {relatorio['nome_arquivo']} | Enviado por: {relatorio['enviado_por']}")
+                    print(f"    Link para Download: {BASE_URL}/arquivos/{relatorio['arquivo_id']}/download")
                     print("-" * 20)
+            else:
+                print("\n--- Nenhum Relatório Fiscal vinculado a este contrato. ---")
 
         else:
             handle_response(response)
 
-    except ValueError:
-        print("ID inválido.")
-    except requests.exceptions.ConnectionError:
-        print("ERRO de conexão com a API.")
+    except (ValueError, TypeError):
+        print("Entrada inválida.")
+    except requests.exceptions.ConnectionError as e:
+        print(f"ERRO: Não foi possível conectar à API. {e}")
     wait_for_enter()
 
 def update_contract_flow():
