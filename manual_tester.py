@@ -19,45 +19,37 @@ def wait_for_enter():
     input("\nPressione Enter para continuar...")
 
 def handle_response(response):
-    """Verifica a resposta da API e imprime o resultado formatado."""
     print("-" * 50)
     if 200 <= response.status_code < 300:
         print("✅ SUCESSO!")
         try:
             content = response.json()
-            if content:
-                pprint(content)
-            else:
-                print("(Operação bem-sucedida sem conteúdo de retorno)")
+            if content: pprint(content)
+            else: print("(Operação bem-sucedida sem conteúdo de retorno)")
             return content
         except json.JSONDecodeError:
             print("(Operação bem-sucedida sem conteúdo JSON na resposta)")
         return True
     else:
         print(f"❌ ERRO! (Status Code: {response.status_code})")
-        try:
-            pprint(response.json())
-        except json.JSONDecodeError:
-            print("Nenhuma mensagem de erro JSON retornada.")
-            print(response.text)
+        try: pprint(response.json())
+        except json.JSONDecodeError: print(f"Nenhuma mensagem de erro JSON retornada.\n{response.text}")
         return None
 
 def get_entities(endpoint):
-    """Busca e imprime uma lista de entidades da API."""
     try:
         response = requests.get(f"{BASE_URL}{endpoint}")
         if response.status_code == 200:
             entities = response.json()
             if not entities:
-                print(f"Nenhum item encontrado em {endpoint}")
+                print(f"\nNenhum item encontrado em {endpoint}")
                 return None
-            
             print(f"\n--- Itens disponíveis em {endpoint} ---")
             for item in entities:
-                if isinstance(item, dict) and 'id' in item and 'nome' in item:
-                     print(f"  ID: {item['id']:<4} | Nome: {item['nome']}")
-                else:
-                    pprint(item)
+                line = f"  ID: {item.get('id', ''):<4} |"
+                if 'nome' in item: line += f" Nome: {item.get('nome', '')}"
+                if 'nr_contrato' in item: line += f" Número: {item.get('nr_contrato', '')}"
+                print(line)
             return entities
         else:
             handle_response(response)
@@ -439,30 +431,74 @@ def delete_contractor_flow():
 
 # --- Copie e cole as funções que não mudaram ---
 def create_contract_flow():
-    """Fluxo guiado para criar um novo contrato."""
+    """Fluxo guiado para criar um novo contrato, com todos os campos opcionais."""
     clear_screen()
     print("--- CRIAR NOVO CONTRATO ---")
-    payload = {}
+    print("Preencha os campos obrigatórios. Para os opcionais, pressione Enter para pular.")
     
-    # Coleta de dados com ajuda para o usuário
-    payload['nr_contrato'] = input("Número do Contrato: ")
-    payload['objeto'] = input("Objeto do Contrato: ")
-    payload['data_inicio'] = input("Data de Início (AAAA-MM-DD): ")
-    payload['data_fim'] = input("Data de Fim (AAAA-MM-DD): ")
+    # Dicionário para os dados do formulário
+    form_data = {}
+    
+    # --- Campos Obrigatórios ---
+    form_data['nr_contrato'] = input("(*) Número do Contrato: ")
+    form_data['objeto'] = input("(*) Objeto do Contrato: ")
+    form_data['data_inicio'] = input("(*) Data de Início (AAAA-MM-DD): ")
+    form_data['data_fim'] = input("(*) Data de Fim (AAAA-MM-DD): ")
 
     if get_entities("/contratados"):
-        payload['contratado_id'] = int(input("ID do Contratado: "))
+        form_data['contratado_id'] = input("(*) ID do Contratado: ")
     if get_entities("/modalidades"):
-        payload['modalidade_id'] = int(input("ID da Modalidade: "))
+        form_data['modalidade_id'] = input("(*) ID da Modalidade: ")
     if get_entities("/status"):
-        payload['status_id'] = int(input("ID do Status do Contrato: "))
-    if get_entities("/usuarios"): # Idealmente filtrar por perfil
-        payload['gestor_id'] = int(input("ID do Gestor: "))
-        payload['fiscal_id'] = int(input("ID do Fiscal: "))
+        form_data['status_id'] = input("(*) ID do Status do Contrato: ")
     
+    print("\n--- Seleção de Pessoal ---")
+    if get_entities("/usuarios"):
+        form_data['gestor_id'] = input("(*) ID do Gestor: ")
+        form_data['fiscal_id'] = input("(*) ID do Fiscal Principal: ")
+        # --- CAMPO OPCIONAL ADICIONADO ---
+        fiscal_sub_id = input("(Opcional) ID do Fiscal Substituto: ")
+        if fiscal_sub_id:
+            form_data['fiscal_substituto_id'] = fiscal_sub_id
+
+    # --- Campos Opcionais de Texto ---
+    print("\n--- Outros Dados (Opcional) ---")
+    valor_anual = input("(Opcional) Valor Anual: ")
+    if valor_anual: form_data['valor_anual'] = valor_anual
+    
+    valor_global = input("(Opcional) Valor Global: ")
+    if valor_global: form_data['valor_global'] = valor_global
+    
+    termos = input("(Opcional) Termos Contratuais: ")
+    if termos: form_data['termos_contratuais'] = termos
+
+    pae = input("(Opcional) Processo Administrativo (PAe): ")
+    if pae: form_data['pae'] = pae
+
+    # --- Anexo de Arquivo Opcional ---
+    print("\n--- Anexo do Contrato (Opcional) ---")
+    filepath = input("(Opcional) Caminho completo para o arquivo do contrato (PDF, etc.): ")
+
     print("\nEnviando dados para a API...")
-    response = requests.post(f"{BASE_URL}/contratos", json=payload)
-    handle_response(response)
+
+    files = {}
+    try:
+        if filepath and os.path.exists(filepath):
+            filename = os.path.basename(filepath)
+            files = {'documento_contrato': (filename, open(filepath, 'rb'))}
+            print(f"Anexando arquivo: {filename}")
+        
+        # Requisição é POST, com 'data' para os campos do formulário e 'files' para o anexo
+        response = requests.post(f"{BASE_URL}/contratos", data=form_data, files=files)
+        handle_response(response)
+
+    except Exception as e:
+        print(f"Ocorreu um erro: {e}")
+    finally:
+        # Garante que o arquivo seja fechado
+        if 'documento_contrato' in files:
+            files['documento_contrato'][1].close()
+
     wait_for_enter()
 
 def create_pendencia_flow():
@@ -593,9 +629,8 @@ def main():
                     user_found = True
                     perfil_id = user['perfil_id']
                     
-                    # Busca o nome do perfil dinamicamente via API
                     perfil_nome = "Desconhecido"
-                    perfis = get_entities("/perfis")
+                    perfis = requests.get(f"{BASE_URL}/perfis").json()
                     if perfis:
                         for perfil in perfis:
                             if perfil['id'] == perfil_id:
@@ -615,8 +650,8 @@ def main():
             if not user_found:
                 print("ID de usuário inválido.")
                 wait_for_enter()
-        except (ValueError, TypeError):
-            print("Entrada inválida. Por favor, digite um número de ID.")
+        except (ValueError, TypeError, requests.exceptions.ConnectionError) as e:
+            print(f"Ocorreu um erro: {e}. Verifique se a API está no ar.")
             wait_for_enter()
 
 

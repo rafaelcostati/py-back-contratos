@@ -5,3 +5,4 @@ reset_database.py
 *.pyc
 uploads/
 __pycache__/
+*.pdf

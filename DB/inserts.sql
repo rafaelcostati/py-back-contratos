@@ -1,6 +1,7 @@
 ALTER TABLE usuario ADD COLUMN ativo BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE contrato ADD COLUMN ativo BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE contratado ADD COLUMN ativo BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE contrato ALTER COLUMN documento TYPE integer USING documento::integer;
 
 
 flask seed-db para popular o banco de dados com dados iniciais
