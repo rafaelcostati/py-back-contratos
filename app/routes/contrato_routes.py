@@ -7,25 +7,41 @@ bp = Blueprint('contratos', __name__, url_prefix='/contratos')
 @bp.route('', methods=['POST'])
 def create():
     data = request.get_json()
-    if not data or 'nome' not in data or 'email' not in data:
-        return jsonify({'error': 'Nome e email são obrigatórios'}), 400
     
-    nome = data['nome']
-    email = data['email']
-    cnpj = data.get('cnpj')
-    cpf = data.get('cpf')
-    telefone = data.get('telefone')
-    
+    # Validações dos campos obrigatórios para um CONTRATO
+    required_fields = ['nr_contrato', 'objeto', 'data_inicio', 'data_fim', 'contratado_id', 'modalidade_id', 'status_id', 'gestor_id', 'fiscal_id']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'O campo "{field}" é obrigatório'}), 400
+
+    # Valida se os IDs fornecidos existem nas tabelas correspondentes
+    if contratado_repo.find_contratado_by_id(data['contratado_id']) is None:
+        return jsonify({'error': 'Contratado não encontrado'}), 404
+    if modalidade_repo.find_modalidade_by_id(data['modalidade_id']) is None:
+        return jsonify({'error': 'Modalidade não encontrada'}), 404
+    if status_repo.find_status_by_id(data['status_id']) is None:
+        return jsonify({'error': 'Status não encontrado'}), 404
+    if usuario_repo.find_user_by_id(data['gestor_id']) is None:
+        return jsonify({'error': 'Gestor não encontrado'}), 404
+    if usuario_repo.find_user_by_id(data['fiscal_id']) is None:
+        return jsonify({'error': 'Fiscal não encontrado'}), 404
+        
     try:
-        new_contratado = contratado_repo.create_contratado(nome, email, cnpj, cpf, telefone)
-        return jsonify(new_contratado), 201
+        new_contrato = contrato_repo.create_contrato(data)
+        return jsonify(new_contrato), 201
     except Exception as e:
-        return jsonify({'error': f'Erro ao criar contratado: {e}'}), 409
+        return jsonify({'error': f'Erro ao criar contrato: {e}'}), 409
 
 @bp.route('', methods=['GET'])
 def list_all():
-    contratados = contratado_repo.get_all_contratados()
-    return jsonify(contratados), 200
+    filters = {
+        'gestor_id': request.args.get('gestor_id'),
+        'fiscal_id': request.args.get('fiscal_id')
+    }
+    active_filters = {k: v for k, v in filters.items() if v is not None}
+    
+    contratos = contrato_repo.get_all_contratos(active_filters)
+    return jsonify(contratos), 200
 
 @bp.route('/<int:id>', methods=['GET'])
 def get_by_id(id):
