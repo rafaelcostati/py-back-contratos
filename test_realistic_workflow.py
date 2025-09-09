@@ -70,22 +70,38 @@ class TestFullWorkflow(unittest.TestCase):
 
         # --- 3. Criando Atores (Contratado, Gestor, Fiscal) ---
         print("-> Criando atores para o teste (Contratado, Gestor, Fiscal)...")
-        random_str = generate_random_string()
         
         # Contratado
-        r_contratado = requests.post(f'{BASE_URL}/contratados', json={"nome": "Empresa Workflow LTDA", "email": f"contratado_wf_{random_str}@teste.com", "cnpj": f"{random.randint(10**13, 10**14-1)}"}, headers=cls.admin_headers)
+        r_contratado = requests.post(f'{BASE_URL}/contratados', json={"nome": "Empresa de Teste de Email LTDA", "email": f"contratado_email_test_{generate_random_string()}@teste.com", "cnpj": f"{random.randint(10**13, 10**14-1)}"}, headers=cls.admin_headers)
+        assert r_contratado.status_code == 201, "Falha ao criar o Contratado."
         cls.created_ids['contratado'] = r_contratado.json()['id']
         
-        # Gestor
-        cls.gestor_email = f"gestor_wf_{random_str}@teste.com"
-        cls.gestor_pass = "senha_gestor"
-        r_gestor = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Gestor de Workflow", "email": cls.gestor_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": cls.gestor_pass, "perfil_id": cls.seed_ids['perfil_gestor']}, headers=cls.admin_headers)
+        # Gestor com email específico
+        cls.gestor_email = os.getenv('EMAIL_GESTOR')
+        cls.gestor_pass = "senha_gestor_123"
+        gestor_payload = {
+            "nome": "Anderson Pontes (Teste Automático)", 
+            "email": cls.gestor_email, 
+            "cpf": f"{random.randint(10**10, 10**11-1)}", # CPF Fictício
+            "senha": cls.gestor_pass, 
+            "perfil_id": cls.seed_ids['perfil_gestor']
+        }
+        r_gestor = requests.post(f'{BASE_URL}/usuarios', json=gestor_payload, headers=cls.admin_headers)
+        assert r_gestor.status_code == 201, f"Falha ao criar Gestor. O email '{cls.gestor_email}' já pode existir no banco. Se necessário, apague-o e rode o teste novamente. Detalhe: {r_gestor.text}"
         cls.created_ids['gestor'] = r_gestor.json()['id']
 
-        # Fiscal
-        cls.fiscal_email = f"fiscal_wf_{random_str}@teste.com"
-        cls.fiscal_pass = "senha_fiscal"
-        r_fiscal = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Fiscal de Workflow", "email": cls.fiscal_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": cls.fiscal_pass, "perfil_id": cls.seed_ids['perfil_fiscal']}, headers=cls.admin_headers)
+        # Fiscal com email específico
+        cls.fiscal_email = os.getenv('EMAIL_FISCAL')
+        cls.fiscal_pass = "senha_fiscal_123"
+        fiscal_payload = {
+            "nome": "Rafael Costa (Teste Automático)", 
+            "email": cls.fiscal_email, 
+            "cpf": f"{random.randint(10**10, 10**11-1)}", # CPF Fictício
+            "senha": cls.fiscal_pass, 
+            "perfil_id": cls.seed_ids['perfil_fiscal']
+        }
+        r_fiscal = requests.post(f'{BASE_URL}/usuarios', json=fiscal_payload, headers=cls.admin_headers)
+        assert r_fiscal.status_code == 201, f"Falha ao criar Fiscal. O email '{cls.fiscal_email}' já pode existir no banco. Se necessário, apague-o e rode o teste novamente. Detalhe: {r_fiscal.text}"
         cls.created_ids['fiscal'] = r_fiscal.json()['id']
         
         print(f"-> Atores criados: Contratado({cls.created_ids['contratado']}), Gestor({cls.created_ids['gestor']}), Fiscal({cls.created_ids['fiscal']})")
@@ -97,7 +113,8 @@ class TestFullWorkflow(unittest.TestCase):
         r_login_fiscal = requests.post(f'{BASE_URL}/auth/login', json={'email': cls.fiscal_email, 'senha': cls.fiscal_pass})
         cls.auth_tokens['fiscal'] = r_login_fiscal.json()['token']
         print("-> Tokens de autenticação para Gestor e Fiscal foram obtidos.")
-
+    
+    # ... O restante dos métodos de teste (test_01, test_02, etc.) permanece exatamente o mesmo ...
     def test_01_admin_can_manage_users(self):
         """ Testa o ciclo de vida completo (CRUD) de um Usuário pelo Admin. """
         print("\nPASSO 1: Testando Gerenciamento de Usuários (Admin)")

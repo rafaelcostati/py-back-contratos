@@ -1,5 +1,6 @@
 # app/routes/pendencia_routes.py
 from flask import Blueprint, request, jsonify
+from app.email_utils import send_email
 from app.repository import pendencia_repo, contrato_repo, usuario_repo, status_pendencia_repo
 from flask_jwt_extended import jwt_required
 from app.auth_decorators import admin_required
@@ -26,8 +27,29 @@ def create(contrato_id):
     if status_pendencia_repo.find_statuspendencia_by_id(data['status_pendencia_id']) is None:
         return jsonify({'error': 'Status de pendência não encontrado'}), 404
 
+    contrato = contrato_repo.find_contrato_by_id(contrato_id)
+    if not contrato:
+        return jsonify({'error': 'Contrato não encontrado'}), 404
+    
     try:
         new_pendencia = pendencia_repo.create_pendencia(contrato_id, data)
+        
+        # --- INÍCIO DA IMPLEMENTAÇÃO DO EMAIL ---
+        fiscal = usuario_repo.find_user_by_id(contrato['fiscal_id'])
+        if fiscal:
+            subject = "Nova pendência de relatório registrada para você"
+            body = f"""
+            Olá, {fiscal['nome']},
+
+            Uma nova pendência de relatório foi registrada para o contrato '{contrato['nr_contrato']}':
+
+            - Descrição: {new_pendencia['descricao']}
+            - Prazo para envio: {new_pendencia['data_prazo'].strftime('%d/%m/%Y')}
+
+            Por favor, acesse o sistema para submeter o relatório.
+            """
+            send_email(fiscal['email'], subject, body)
+        # --- FIM DA IMPLEMENTAÇÃO DO EMAIL ---
         return jsonify(new_pendencia), 201
     except Exception as e:
         return jsonify({'error': f'Erro ao criar pendência: {e}'}), 500

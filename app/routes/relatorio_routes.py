@@ -5,6 +5,8 @@ from werkzeug.utils import secure_filename
 from app.repository import relatorio_repo, arquivo_repo, contrato_repo, status_pendencia_repo, usuario_repo, status_relatorio_repo, pendencia_repo
 from flask_jwt_extended import jwt_required
 from app.auth_decorators import admin_required, fiscal_required
+from app.email_utils import send_email
+
 
 bp = Blueprint('relatorios', __name__, url_prefix='/contratos/<int:contrato_id>/relatorios')
 
@@ -115,10 +117,33 @@ def analisar_relatorio(contrato_id, relatorio_id):
 
     try:
         observacoes = data.get('observacoes_aprovador')
-        relatorio = relatorio_repo.analise_relatorio(
+        relatorio_atualizado = relatorio_repo.analise_relatorio(
             relatorio_id, data['aprovador_usuario_id'], data['status_id'], observacoes
         )
-        return jsonify(relatorio), 200
+                # --- INÍCIO DA IMPLEMENTAÇÃO DO EMAIL ---
+        status_rejeitado = status_relatorio_repo.find_statusrelatorio_by_name('Rejeitado com Pendência')
+        
+        # Envia email apenas se o status for 'Rejeitado com Pendência'
+        if status_rejeitado and relatorio_atualizado['status_id'] == status_rejeitado['id']:
+            relatorio_original = relatorio_repo.find_relatorio_by_id(relatorio_id)
+            fiscal = usuario_repo.find_user_by_id(relatorio_original['fiscal_usuario_id'])
+            contrato = contrato_repo.find_contrato_by_id(contrato_id)
+
+            if fiscal and contrato:
+                subject = f"Relatório Rejeitado - Contrato {contrato['nr_contrato']}"
+                body = f"""
+                Olá, {fiscal['nome']},
+
+                O seu relatório referente ao mês de competência {relatorio_original['mes_competencia'].strftime('%m/%Y')} para o contrato '{contrato['nr_contrato']}' foi rejeitado.
+
+                Motivo da rejeição:
+                "{relatorio_atualizado['observacoes_aprovador']}"
+
+                Por favor, realize as correções necessárias e reenvie o relatório através do sistema.
+                """
+                send_email(fiscal['email'], subject, body)
+        # --- FIM DA IMPLEMENTAÇÃO DO EMAIL ---
+        return jsonify(relatorio_atualizado), 200
     except Exception as e:
         return jsonify({'error': f'Erro ao analisar relatório: {e}'}), 500
 

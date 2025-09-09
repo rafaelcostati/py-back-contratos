@@ -1,5 +1,6 @@
 # app/routes/contrato_routes.py
 from flask import Blueprint, request, jsonify
+from app.email_utils import send_email
 from app.repository import contrato_repo, contratado_repo, modalidade_repo, relatorio_repo, status_repo, usuario_repo
 from flask_jwt_extended import jwt_required
 from app.auth_decorators import admin_required
@@ -24,11 +25,41 @@ def create():
     if status_repo.find_status_by_id(data['status_id']) is None: return jsonify({'error': 'Status não encontrado'}), 404
     if usuario_repo.find_user_by_id(data['gestor_id']) is None: return jsonify({'error': 'Gestor não encontrado'}), 404
     if usuario_repo.find_user_by_id(data['fiscal_id']) is None: return jsonify({'error': 'Fiscal não encontrado'}), 404
-        
+    
+    gestor = usuario_repo.find_user_by_id(data['gestor_id'])
+    fiscal = usuario_repo.find_user_by_id(data['fiscal_id'])
+    if not gestor: return jsonify({'error': 'Gestor não encontrado'}), 404
+    if not fiscal: return jsonify({'error': 'Fiscal não encontrado'}), 404
+    
     try:
-        # LÓGICA CORRIGIDA
+        
         # 1. Cria o contrato primeiro, sem a informação do documento
         new_contrato = contrato_repo.create_contrato(data)
+        
+        subject_gestor = "Você foi designado como Gestor de um novo contrato"
+        body_gestor = f"""
+        Olá, {gestor['nome']},
+
+        Você foi designado como gestor do seguinte contrato:
+        - Número: {new_contrato.get('nr_contrato')}
+        - Objeto: {new_contrato.get('objeto')}
+
+        Por favor, acesse o sistema SIGESCON para mais detalhes.
+        """
+        send_email(gestor['email'], subject_gestor, body_gestor)
+
+        # Notificar o Fiscal
+        subject_fiscal = "Você foi designado como Fiscal de um novo contrato"
+        body_fiscal = f"""
+        Olá, {fiscal['nome']},
+
+        Você foi designado como fiscal do seguinte contrato:
+        - Número: {new_contrato.get('nr_contrato')}
+        - Objeto: {new_contrato.get('objeto')}
+
+        Por favor, acesse o sistema SIGESCON para mais detalhes.
+        """
+        send_email(fiscal['email'], subject_fiscal, body_fiscal)
         
         # 2. Verifica se há um arquivo para upload
         if 'documento_contrato' in request.files:

@@ -16,7 +16,7 @@ def create_app(test_config=None):
     app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY') 
     jwt = JWTManager(app)
     
-    CORS(app)
+    CORS(app, resources={r"/*": {"origins": "*"}})
     upload_folder = os.path.join(app.instance_path, '..', 'uploads')
     os.makedirs(upload_folder, exist_ok=True)
     app.config['UPLOAD_FOLDER'] = upload_folder
