@@ -77,9 +77,9 @@ class TestFullWorkflow(unittest.TestCase):
         cls.created_ids['contratado'] = r_contratado.json()['id']
         
         # Gestor
-        gestor_email = f"gestor_wf_{random_str}@teste.com"
+        cls.gestor_email = f"gestor_wf_{random_str}@teste.com"
         gestor_pass = "senha_gestor"
-        r_gestor = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Gestor de Workflow", "email": gestor_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": gestor_pass, "perfil_id": cls.seed_ids['perfil_gestor']}, headers=cls.admin_headers)
+        r_gestor = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Gestor de Workflow", "email": cls.gestor_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": gestor_pass, "perfil_id": cls.seed_ids['perfil_gestor']}, headers=cls.admin_headers)
         cls.created_ids['gestor'] = r_gestor.json()['id']
 
         # Fiscal
@@ -91,16 +91,49 @@ class TestFullWorkflow(unittest.TestCase):
         print(f"-> Atores criados: Contratado({cls.created_ids['contratado']}), Gestor({cls.created_ids['gestor']}), Fiscal({cls.created_ids['fiscal']})")
         
         # --- 4. Login como Gestor e Fiscal para obter seus tokens ---
-        r_login_gestor = requests.post(f'{BASE_URL}/auth/login', json={'email': gestor_email, 'senha': gestor_pass})
+        r_login_gestor = requests.post(f'{BASE_URL}/auth/login', json={'email': cls.gestor_email, 'senha': gestor_pass})
         cls.auth_tokens['gestor'] = r_login_gestor.json()['token']
         
         r_login_fiscal = requests.post(f'{BASE_URL}/auth/login', json={'email': fiscal_email, 'senha': fiscal_pass})
         cls.auth_tokens['fiscal'] = r_login_fiscal.json()['token']
         print("-> Tokens de autenticação para Gestor e Fiscal foram obtidos.")
 
-    def test_01_admin_can_manage_contratados(self):
+    def test_01_admin_can_manage_users(self):
+        """ Testa o ciclo de vida completo (CRUD) de um Usuário pelo Admin. """
+        print("\nPASSO 1: Testando Gerenciamento de Usuários (Admin)")
+        random_str = generate_random_string()
+        
+        # CREATE
+        email = f"user_crud_{random_str}@teste.com"
+        payload = {"nome": f"User CRUD {random_str}", "email": email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": "123", "perfil_id": self.seed_ids['perfil_fiscal']}
+        r_create = requests.post(f'{BASE_URL}/usuarios', json=payload, headers=self.admin_headers)
+        self.assertEqual(r_create.status_code, 201)
+        user_id = r_create.json()['id']
+        print(f"-> Usuário {user_id} criado.")
+
+        # READ (By ID)
+        r_read = requests.get(f'{BASE_URL}/usuarios/{user_id}', headers=self.admin_headers)
+        self.assertEqual(r_read.status_code, 200)
+        self.assertEqual(r_read.json()['email'], email)
+        print(f"-> Usuário {user_id} lido com sucesso.")
+
+        # UPDATE
+        update_payload = {"nome": f"User CRUD Alterado {random_str}"}
+        r_update = requests.patch(f'{BASE_URL}/usuarios/{user_id}', json=update_payload, headers=self.admin_headers)
+        self.assertEqual(r_update.status_code, 200)
+        self.assertEqual(r_update.json()['nome'], update_payload['nome'])
+        print(f"-> Usuário {user_id} atualizado.")
+
+        # DELETE
+        r_delete = requests.delete(f'{BASE_URL}/usuarios/{user_id}', headers=self.admin_headers)
+        self.assertEqual(r_delete.status_code, 204)
+        r_verify_delete = requests.get(f'{BASE_URL}/usuarios/{user_id}', headers=self.admin_headers)
+        self.assertEqual(r_verify_delete.status_code, 404)
+        print(f"-> Usuário {user_id} deletado.")
+        
+    def test_02_admin_can_manage_contratados(self):
         """ Testa o ciclo de vida completo (CRUD) de um Contratado pelo Admin. """
-        print("\nPASSO 1: Testando Gerenciamento de Contratados (Admin)")
+        print("\nPASSO 2: Testando Gerenciamento de Contratados (Admin)")
         random_str = generate_random_string()
         
         # CREATE
@@ -130,9 +163,9 @@ class TestFullWorkflow(unittest.TestCase):
         self.assertEqual(r_verify_delete.status_code, 404)
         print(f"-> Contratado {contratado_id} deletado.")
 
-    def test_02_permission_denied_for_non_admins(self):
+    def test_03_permission_denied_for_non_admins(self):
         """ Testa se usuários não-admin (Fiscal, Gestor) são bloqueados de rotas de admin. """
-        print("\nPASSO 2: Testando restrições de permissão")
+        print("\nPASSO 3: Testando restrições de permissão")
         
         # Fiscal tentando criar um usuário (deve falhar)
         fiscal_headers = {'Authorization': f'Bearer {self.auth_tokens["fiscal"]}'}
@@ -151,10 +184,33 @@ class TestFullWorkflow(unittest.TestCase):
         r_gestor_del = requests.delete(f"{BASE_URL}/contratados/{self.created_ids['contratado']}", headers=gestor_headers)
         self.assertEqual(r_gestor_del.status_code, 403)
         print("-> Gestor foi corretamente bloqueado de deletar contratados.")
+        
+    def test_04_validation_and_error_handling(self):
+        """ Testa se a API lida corretamente com entradas inválidas. """
+        print("\nPASSO 4: Testando validação e tratamento de erros")
 
-    def test_03_full_contract_and_report_workflow(self):
-        """ Simula o fluxo de ponta a ponta: criação, pendência, envio e aprovação. """
-        print("\nPASSO 3: Iniciando fluxo completo de Contrato e Relatório")
+        # Tentar criar usuário com email que já existe (do gestor criado no setup)
+        payload = {"nome": "Duplicado", "email": self.gestor_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": "123", "perfil_id": self.seed_ids['perfil_fiscal']}
+        r_duplicate = requests.post(f'{BASE_URL}/usuarios', json=payload, headers=self.admin_headers)
+        self.assertIn(r_duplicate.status_code, [409, 500]) # 409 (Conflict) é o ideal
+        print("-> API retornou erro ao tentar criar usuário com email duplicado.")
+
+        # Tentar criar contrato com um gestor_id inválido
+        invalid_id = 999999
+        form_data = {
+            "nr_contrato": f"WF-INVALID-{generate_random_string()}", "objeto": "Contrato com ID inválido",
+            "data_inicio": "2025-01-01", "data_fim": "2025-12-31",
+            "contratado_id": self.created_ids['contratado'], "modalidade_id": self.seed_ids['modalidade'],
+            "status_id": self.seed_ids['status_vigente'], "gestor_id": invalid_id, 
+            "fiscal_id": self.created_ids['fiscal']
+        }
+        r_invalid_id = requests.post(f'{BASE_URL}/contratos', json=form_data, headers=self.admin_headers)
+        self.assertEqual(r_invalid_id.status_code, 404)
+        print("-> API retornou erro 404 ao criar contrato com gestor_id inválido.")
+
+    def test_05_full_contract_and_report_workflow(self):
+        """ Simula o fluxo de ponta a ponta: criação, pendência, envio, download e aprovação. """
+        print("\nPASSO 5: Iniciando fluxo completo de Contrato e Relatório")
         
         # --- ETAPA 1 (Admin): Cria o Contrato com anexo ---
         print(" -> ETAPA 1 (Admin): Criando o contrato com anexo...")
@@ -203,11 +259,19 @@ class TestFullWorkflow(unittest.TestCase):
         
         self.assertEqual(r_relatorio.status_code, 201, f"Falha ao enviar relatório: {r_relatorio.text}")
         relatorio_id = r_relatorio.json()['id']
+        arquivo_id = r_relatorio.json()['arquivo_id']
         self.__class__.created_ids['relatorio'] = relatorio_id
-        print(f" -> Relatório ID {relatorio_id} enviado pelo fiscal.")
+        print(f" -> Relatório ID {relatorio_id} (Arquivo ID {arquivo_id}) enviado pelo fiscal.")
+
+        # --- ETAPA 4 (Fiscal): Tenta baixar o próprio relatório ---
+        print(" -> ETAPA 4 (Fiscal): Verificando o download do relatório...")
+        r_download = requests.get(f'{BASE_URL}/arquivos/{arquivo_id}/download', headers=fiscal_headers)
+        self.assertEqual(r_download.status_code, 200)
+        self.assertIn('Este é um relatório de teste', r_download.text)
+        print(" -> Fiscal conseguiu baixar o relatório com sucesso.")
         
-        # --- ETAPA 4 (Admin): Rejeita o Relatório ---
-        print(" -> ETAPA 4 (Admin): Rejeitando o relatório com observações...")
+        # --- ETAPA 5 (Admin): Rejeita o Relatório ---
+        print(" -> ETAPA 5 (Admin): Rejeitando o relatório com observações...")
         analise_payload = {
             "aprovador_usuario_id": self.created_ids['admin'],
             "status_id": self.seed_ids['status_relatorio_rejeitado'],
@@ -218,8 +282,8 @@ class TestFullWorkflow(unittest.TestCase):
         self.assertEqual(r_rejeita.json()['status_id'], self.seed_ids['status_relatorio_rejeitado'])
         print(" -> Relatório rejeitado com sucesso.")
         
-        # --- ETAPA 5 (Fiscal): Reenvia o Relatório Corrigido ---
-        print(" -> ETAPA 5 (Fiscal): Reenviando o relatório corrigido...")
+        # --- ETAPA 6 (Fiscal): Reenvia o Relatório Corrigido ---
+        print(" -> ETAPA 6 (Fiscal): Reenviando o relatório corrigido...")
         with open(TXT_RELATORIO_PATH, "rb") as f:
             files = {'arquivo': ('relatorio_v2.txt', f, 'text/plain')}
             form_data = {'observacoes_fiscal': 'Correções aplicadas conforme solicitado.'}
@@ -229,16 +293,16 @@ class TestFullWorkflow(unittest.TestCase):
         self.assertEqual(r_reenvio.json()['status_id'], self.seed_ids['status_relatorio_pendente'])
         print(f" -> Relatório ID {relatorio_id} reenviado e status 'Pendente de Análise'.")
         
-        # --- ETAPA 6 (Admin): Aprova o Relatório Final ---
-        print(" -> ETAPA 6 (Admin): Aprovando o relatório final...")
+        # --- ETAPA 7 (Admin): Aprova o Relatório Final ---
+        print(" -> ETAPA 7 (Admin): Aprovando o relatório final...")
         analise_aprovacao_payload = { "aprovador_usuario_id": self.created_ids['admin'], "status_id": self.seed_ids['status_relatorio_aprovado'] }
         r_aprova = requests.patch(f'{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}/analise', json=analise_aprovacao_payload, headers=self.admin_headers)
         self.assertEqual(r_aprova.status_code, 200)
         self.assertEqual(r_aprova.json()['status_id'], self.seed_ids['status_relatorio_aprovado'])
         print(" -> Relatório final aprovado.")
         
-        # --- ETAPA 7 (Gestor): Consulta seus contratos ---
-        print(" -> ETAPA 7 (Gestor): Verificando se consegue ver o contrato...")
+        # --- ETAPA 8 (Gestor): Consulta seus contratos ---
+        print(" -> ETAPA 8 (Gestor): Verificando se consegue ver o contrato...")
         gestor_headers = {'Authorization': f'Bearer {self.auth_tokens["gestor"]}'}
         r_gestor_lista = requests.get(f"{BASE_URL}/contratos?gestor_id={self.created_ids['gestor']}", headers=gestor_headers)
         self.assertEqual(r_gestor_lista.status_code, 200)
@@ -247,15 +311,43 @@ class TestFullWorkflow(unittest.TestCase):
         self.assertEqual(contratos_gestor[0]['id'], contrato_id)
         print(" -> Consulta de contratos por gestor funciona corretamente.")
         
-        # --- ETAPA 8 (Admin): Altera o status do contrato ---
-        print(" -> ETAPA 8 (Admin): Alterando o status do ciclo de vida do contrato...")
+        # --- ETAPA 9 (Admin): Altera o status do contrato ---
+        print(" -> ETAPA 9 (Admin): Alterando o status do ciclo de vida do contrato...")
         r_patch_contrato = requests.patch(f'{BASE_URL}/contratos/{contrato_id}', json={"status_id": self.seed_ids['status_suspenso']}, headers=self.admin_headers)
         self.assertEqual(r_patch_contrato.status_code, 200)
         r_verify = requests.get(f'{BASE_URL}/contratos/{contrato_id}', headers=self.admin_headers)
         self.assertEqual(r_verify.json()['status_nome'], 'Suspenso')
         print(" -> Status do contrato alterado com sucesso para 'Suspenso'.")
+        
+    def test_06_contract_filtering(self):
+        """ Testa a lógica de filtragem da lista de contratos para cada perfil. """
+        print("\nPASSO 6: Testando a filtragem de contratos por perfil.")
+        
+        # Garante que um contrato exista para o teste.
+        self.assertIn('contrato', self.created_ids, "O contrato do teste de workflow não foi criado.")
+        contrato_id = self.created_ids['contrato']
 
+        # Admin: sem filtros, deve ver pelo menos um contrato.
+        r_admin = requests.get(f'{BASE_URL}/contratos', headers=self.admin_headers)
+        self.assertEqual(r_admin.status_code, 200)
+        self.assertGreater(len(r_admin.json()), 0)
+        print(" -> Admin vê todos os contratos.")
 
+        # Fiscal: deve ver apenas o seu contrato.
+        fiscal_headers = {'Authorization': f'Bearer {self.auth_tokens["fiscal"]}'}
+        r_fiscal = requests.get(f"{BASE_URL}/contratos?fiscal_id={self.created_ids['fiscal']}", headers=fiscal_headers)
+        self.assertEqual(r_fiscal.status_code, 200)
+        self.assertEqual(len(r_fiscal.json()), 1)
+        self.assertEqual(r_fiscal.json()[0]['id'], contrato_id)
+        print(" -> Fiscal vê apenas seus contratos.")
+        
+        # Gestor: não deve ver o contrato do fiscal ao filtrar por outro ID.
+        gestor_headers = {'Authorization': f'Bearer {self.auth_tokens["gestor"]}'}
+        r_gestor_vazio = requests.get(f"{BASE_URL}/contratos?fiscal_id={self.created_ids['gestor']}", headers=gestor_headers)
+        self.assertEqual(r_gestor_vazio.status_code, 200)
+        self.assertEqual(len(r_gestor_vazio.json()), 0)
+        print(" -> Filtro por ID de fiscal diferente retorna lista vazia, como esperado.")
+        
     @classmethod
     def tearDownClass(cls):
         """ Limpa todos os recursos criados durante os testes. """
