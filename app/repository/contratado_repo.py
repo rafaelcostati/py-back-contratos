@@ -72,3 +72,32 @@ def delete_contratado(contratado_id):
         raise e
     finally:
         cursor.close()
+        
+def find_contrato_by_id(contrato_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    sql = """
+        SELECT
+            c.*,
+            ct.nome AS contratado_nome, ct.cnpj AS contratado_cnpj,
+            m.nome AS modalidade_nome,
+            s.nome AS status_nome,
+            gestor.nome AS gestor_nome,
+            fiscal.nome AS fiscal_nome,
+            fiscal_sub.nome AS fiscal_substituto_nome,
+            doc.nome_arquivo AS documento_nome_arquivo
+        FROM contrato c
+        LEFT JOIN contratado ct ON c.contratado_id = ct.id
+        LEFT JOIN modalidade m ON c.modalidade_id = m.id
+        LEFT JOIN status s ON c.status_id = s.id
+        LEFT JOIN usuario gestor ON c.gestor_id = gestor.id
+        LEFT JOIN usuario fiscal ON c.fiscal_id = fiscal.id
+        LEFT JOIN usuario fiscal_sub ON c.fiscal_substituto_id = fiscal_sub.id
+        LEFT JOIN arquivo doc ON c.documento::int = doc.id
+        WHERE c.id = %s AND c.ativo = TRUE
+    """
+    cursor.execute(sql, (contrato_id,))
+    contrato = cursor.fetchone()
+    cursor.close()
+    return contrato

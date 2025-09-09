@@ -559,23 +559,27 @@ def submit_report_flow():
     clear_screen()
     print("--- SUBMETER RELATÓRIO DE PENDÊNCIA ---")
     
-    print("\nBuscando contratos com pendências para você...")
+    print("\nBuscando contratos com pendências ativas para você...")
     contratos = get_entities(f"/contratos?fiscal_id={CURRENT_USER['id']}")
     if not contratos:
         wait_for_enter()
         return
 
-    # Mostra apenas as pendências que estão com o status "Pendente"
+    # Filtra e mostra apenas as pendências que estão aguardando ação do fiscal
     pendencias_disponiveis = []
     for contrato in contratos:
-        pendencias = requests.get(f"{BASE_URL}/contratos/{contrato['id']}/pendencias").json()
-        if pendencias:
-            for p in pendencias:
-                if p['status_nome'] == 'Pendente' or p['status_nome'] == 'Rejeitado com Pendência':
-                    print(f"\nContrato ID: {contrato['id']} - {contrato.get('nr_contrato')}")
-                    print(f"  -> Pendência ID: {p['id']} | Descrição: {p['descricao']}")
-                    print(f"     Prazo: {p['data_prazo']}")
-                    pendencias_disponiveis.append(p)
+        pendencias_response = requests.get(f"{BASE_URL}/contratos/{contrato['id']}/pendencias")
+        if pendencias_response.status_code == 200:
+            pendencias = pendencias_response.json()
+            if pendencias:
+                for p in pendencias:
+                    # Ação é necessária se a pendência estiver 'Pendente' ou 'Rejeitada'
+                    if p.get('status_nome') in ['Pendente', 'Rejeitado com Pendência']:
+                        print(f"\nContrato ID: {contrato['id']} - {contrato.get('nr_contrato')}")
+                        print(f"  -> Pendência ID: {p['id']} | Status: {p['status_nome']}")
+                        print(f"     Descrição: {p['descricao']}")
+                        print(f"     Prazo: {p.get('data_prazo')}")
+                        pendencias_disponiveis.append(p)
     
     if not pendencias_disponiveis:
         print("\nNenhuma pendência ativa encontrada para os seus contratos.")
@@ -583,7 +587,8 @@ def submit_report_flow():
         return
 
     try:
-        pendencia_id = int(input("\nPara qual Pendência (ID) é este relatório? "))
+        pendencia_id_str = input("\nPara qual Pendência (ID) você deseja enviar o relatório? ")
+        pendencia_id = int(pendencia_id_str)
         
         # Encontra o contrato_id a partir da pendência escolhida
         contrato_id = None
@@ -591,6 +596,7 @@ def submit_report_flow():
             if p['id'] == pendencia_id:
                 contrato_id = p['contrato_id']
                 break
+        
         if not contrato_id:
             print("ID de pendência inválido.")
             wait_for_enter()
@@ -613,44 +619,13 @@ def submit_report_flow():
         with open(filepath, "rb") as f:
             filename = os.path.basename(filepath)
             files = {'arquivo': (filename, f)}
+            # O fiscal não envia mais o status, a API define automaticamente
             response = requests.post(f'{BASE_URL}/contratos/{contrato_id}/relatorios', data=form_data, files=files)
         handle_response(response)
 
     except (ValueError, TypeError):
         print("Entrada inválida.")
     
-    wait_for_enter()
-
-    contrato_id = int(input("Para qual Contrato (ID) é este relatório? "))
-    
-    filepath = input("Digite o caminho completo para o arquivo (ex: /home/user/relatorio.pdf): ")
-    if not os.path.exists(filepath):
-        print("ERRO: Arquivo não encontrado.")
-        wait_for_enter()
-        return
-
-    form_data = {
-        'mes_competencia': input("Mês de Competência (AAAA-MM-DD): "),
-        'fiscal_usuario_id': CURRENT_USER['id'],
-        'observacoes_fiscal': input("Observações (opcional): ")
-    }
-    
-    status_relatorios = get_entities("/statusrelatorio")
-    if not status_relatorios:
-        wait_for_enter()
-        return
-    form_data['status_id'] = int(input("ID do Status do Relatório: "))
-
-    print("\nEnviando arquivo e dados para a API...")
-    try:
-        with open(filepath, "rb") as f:
-            filename = os.path.basename(filepath)
-            files = {'arquivo': (filename, f)}
-            response = requests.post(f'{BASE_URL}/contratos/{contrato_id}/relatorios', data=form_data, files=files)
-        handle_response(response)
-    except Exception as e:
-        print(f"Ocorreu um erro: {e}")
-        
     wait_for_enter()
 
 def analise_relatorio_flow():

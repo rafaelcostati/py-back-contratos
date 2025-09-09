@@ -46,7 +46,7 @@ def submit_relatorio(contrato_id):
         return jsonify({'error': 'Contrato não encontrado'}), 404
         
     form_data = request.form
-    # Validação do fluxo de negócio
+    # VALIDAÇÃO DA REGRA DE NEGÓCIO: O fiscal DEVE informar a pendência.
     if 'pendencia_id' not in form_data:
         return jsonify({'error': 'É obrigatório informar o ID da pendência (pendencia_id) à qual este relatório responde.'}), 400
 
@@ -61,7 +61,7 @@ def submit_relatorio(contrato_id):
         status_pendencia_concluida = status_pendencia_repo.find_statuspendencia_by_name('Concluída')
         
         if not status_relatorio_pendente or not status_pendencia_concluida:
-            return jsonify({'error': 'Status padrão não encontrados no banco. Execute o seeder.'}), 500
+            return jsonify({'error': 'Status padrão ("Pendente de Análise", "Concluída") não encontrados no banco. Execute o seeder.'}), 500
 
         new_arquivo = _handle_file_upload(contrato_id, file_key='arquivo')
         filepath = new_arquivo['path_armazenamento']
@@ -73,12 +73,13 @@ def submit_relatorio(contrato_id):
             'mes_competencia': form_data['mes_competencia'],
             'observacoes_fiscal': form_data.get('observacoes_fiscal'),
             'pendencia_id': form_data.get('pendencia_id'),
+            # LÓGICA CORRIGIDA: O status é definido automaticamente, ignorando qualquer coisa que o fiscal envie.
             'status_id': status_relatorio_pendente['id']
         }
         
         new_relatorio = relatorio_repo.create_relatorio(relatorio_data)
         
-        
+        # LÓGICA CORRIGIDA: Após o envio, a pendência original é marcada como "Concluída".
         pendencia_repo.update_pendencia_status(relatorio_data['pendencia_id'], status_pendencia_concluida['id'])
 
         return jsonify(new_relatorio), 201
