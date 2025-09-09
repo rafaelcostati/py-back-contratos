@@ -1,6 +1,6 @@
 # app/routes/contratado_routes.py
 from flask import Blueprint, request, jsonify
-from app.repository import contratado_repo
+from app.repository import contratado_repo, contrato_repo
 from flask_jwt_extended import jwt_required
 from app.auth_decorators import admin_required
 
@@ -61,6 +61,14 @@ def update(id):
 def delete(id):
     if contratado_repo.find_contratado_by_id(id) is None:
         return jsonify({'error': 'Contratado não encontrado'}), 404
-        
+
+    contratos_associados = contrato_repo.get_all_contratos(filters={'contratado_id': id})
+    if contratos_associados:
+        return jsonify({
+            'error': 'Este contratado não pode ser excluído pois está associado a um ou mais contratos.',
+            'contratos': [{'id': c['id'], 'nr_contrato': c['nr_contrato']} for c in contratos_associados]
+        }), 409 # Retorna 409 Conflict
+    
+
     contratado_repo.delete_contratado(id)
     return '', 204

@@ -45,7 +45,7 @@ def create_contrato(data):
 def get_all_contratos(filters=None):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
+
     base_sql = """
         SELECT
             c.id, c.nr_contrato, c.objeto, c.data_inicio, c.data_fim,
@@ -55,7 +55,7 @@ def get_all_contratos(filters=None):
         LEFT JOIN modalidade m ON c.modalidade_id = m.id
         LEFT JOIN status s ON c.status_id = s.id
     """
-    
+
     where_clauses = ["c.ativo = TRUE"]
     params = []
 
@@ -66,17 +66,21 @@ def get_all_contratos(filters=None):
         if 'fiscal_id' in filters:
             where_clauses.append("c.fiscal_id = %s")
             params.append(filters['fiscal_id'])
+        
+        if 'contratado_id' in filters:
+            where_clauses.append("c.contratado_id = %s")
+            params.append(filters['contratado_id'])
+        
 
     if where_clauses:
         base_sql += " WHERE " + " AND ".join(where_clauses)
-        
+
     base_sql += " ORDER BY c.data_fim DESC"
 
     cursor.execute(base_sql, tuple(params))
     contratos = cursor.fetchall()
     cursor.close()
     return contratos
-
 def find_contrato_by_id(contrato_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)

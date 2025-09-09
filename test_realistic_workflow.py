@@ -78,23 +78,23 @@ class TestFullWorkflow(unittest.TestCase):
         
         # Gestor
         cls.gestor_email = f"gestor_wf_{random_str}@teste.com"
-        gestor_pass = "senha_gestor"
-        r_gestor = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Gestor de Workflow", "email": cls.gestor_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": gestor_pass, "perfil_id": cls.seed_ids['perfil_gestor']}, headers=cls.admin_headers)
+        cls.gestor_pass = "senha_gestor"
+        r_gestor = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Gestor de Workflow", "email": cls.gestor_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": cls.gestor_pass, "perfil_id": cls.seed_ids['perfil_gestor']}, headers=cls.admin_headers)
         cls.created_ids['gestor'] = r_gestor.json()['id']
 
         # Fiscal
-        fiscal_email = f"fiscal_wf_{random_str}@teste.com"
-        fiscal_pass = "senha_fiscal"
-        r_fiscal = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Fiscal de Workflow", "email": fiscal_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": fiscal_pass, "perfil_id": cls.seed_ids['perfil_fiscal']}, headers=cls.admin_headers)
+        cls.fiscal_email = f"fiscal_wf_{random_str}@teste.com"
+        cls.fiscal_pass = "senha_fiscal"
+        r_fiscal = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Fiscal de Workflow", "email": cls.fiscal_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": cls.fiscal_pass, "perfil_id": cls.seed_ids['perfil_fiscal']}, headers=cls.admin_headers)
         cls.created_ids['fiscal'] = r_fiscal.json()['id']
         
         print(f"-> Atores criados: Contratado({cls.created_ids['contratado']}), Gestor({cls.created_ids['gestor']}), Fiscal({cls.created_ids['fiscal']})")
         
         # --- 4. Login como Gestor e Fiscal para obter seus tokens ---
-        r_login_gestor = requests.post(f'{BASE_URL}/auth/login', json={'email': cls.gestor_email, 'senha': gestor_pass})
+        r_login_gestor = requests.post(f'{BASE_URL}/auth/login', json={'email': cls.gestor_email, 'senha': cls.gestor_pass})
         cls.auth_tokens['gestor'] = r_login_gestor.json()['token']
         
-        r_login_fiscal = requests.post(f'{BASE_URL}/auth/login', json={'email': fiscal_email, 'senha': fiscal_pass})
+        r_login_fiscal = requests.post(f'{BASE_URL}/auth/login', json={'email': cls.fiscal_email, 'senha': cls.fiscal_pass})
         cls.auth_tokens['fiscal'] = r_login_fiscal.json()['token']
         print("-> Tokens de autenticação para Gestor e Fiscal foram obtidos.")
 
@@ -348,12 +348,133 @@ class TestFullWorkflow(unittest.TestCase):
         self.assertEqual(len(r_gestor_vazio.json()), 0)
         print(" -> Filtro por ID de fiscal diferente retorna lista vazia, como esperado.")
         
+    def test_07_password_management(self):
+        """ Testa as rotas de alteração e reset de senha. """
+        print("\nPASSO 7: Testando o gerenciamento de senhas.")
+        fiscal_id = self.created_ids['fiscal']
+        fiscal_headers = {'Authorization': f'Bearer {self.auth_tokens["fiscal"]}'}
+        nova_senha = "nova_senha_123"
+
+        # Tenta alterar a senha com a senha antiga errada (deve falhar)
+        payload_errado = {"senha_antiga": "senha_errada", "nova_senha": nova_senha}
+        r_fail = requests.patch(f'{BASE_URL}/usuarios/{fiscal_id}/alterar-senha', json=payload_errado, headers=fiscal_headers)
+        self.assertEqual(r_fail.status_code, 401)
+        print(" -> API bloqueou a alteração de senha com a senha antiga incorreta.")
+
+        # Altera a senha com a senha antiga correta (deve funcionar)
+        payload_correto = {"senha_antiga": self.fiscal_pass, "nova_senha": nova_senha}
+        r_success = requests.patch(f'{BASE_URL}/usuarios/{fiscal_id}/alterar-senha', json=payload_correto, headers=fiscal_headers)
+        self.assertEqual(r_success.status_code, 200)
+        print(" -> Usuário (Fiscal) alterou a própria senha com sucesso.")
+
+        # Verifica se consegue fazer login com a nova senha
+        r_login_new = requests.post(f'{BASE_URL}/auth/login', json={'email': self.fiscal_email, 'senha': nova_senha})
+        self.assertEqual(r_login_new.status_code, 200)
+        print(" -> Login com a nova senha funciona.")
+
+        # Admin reseta a senha do usuário
+        senha_resetada = "senha_resetada_pelo_admin"
+        r_reset = requests.patch(f'{BASE_URL}/usuarios/{fiscal_id}/resetar-senha', json={"nova_senha": senha_resetada}, headers=self.admin_headers)
+        self.assertEqual(r_reset.status_code, 200)
+        print(" -> Admin resetou a senha do usuário com sucesso.")
+
+        # Verifica se consegue fazer login com a senha resetada
+        r_login_reset = requests.post(f'{BASE_URL}/auth/login', json={'email': self.fiscal_email, 'senha': senha_resetada})
+        self.assertEqual(r_login_reset.status_code, 200)
+        print(" -> Login com a senha resetada funciona.")
+
+    def test_08_advanced_error_handling(self):
+        """ Testa cenários de erro mais complexos e regras de negócio. """
+        print("\nPASSO 8: Testando tratamento de erros avançado.")
+        contrato_id = self.created_ids['contrato']
+        fiscal_headers = {'Authorization': f'Bearer {self.auth_tokens["fiscal"]}'}
+        
+        # Tenta fazer upload de arquivo com extensão não permitida
+        with open("teste.zip", "w") as f: f.write("conteudo")
+        with open("teste.zip", "rb") as f:
+            files = {'arquivo': ('teste.zip', f, 'application/zip')}
+            form_data = { 'mes_competencia': '2025-01-01', 'fiscal_usuario_id': self.created_ids['fiscal'], 'pendencia_id': 999 }
+            r_extensao = requests.post(f'{BASE_URL}/contratos/{contrato_id}/relatorios', data=form_data, files=files, headers=fiscal_headers)
+        os.remove("teste.zip")
+        self.assertEqual(r_extensao.status_code, 400)
+        print(" -> API bloqueou o upload de arquivo com extensão não permitida.")
+
+        # Cria um segundo contrato que não pertence ao fiscal principal
+        outro_gestor_payload = {"nome": "Outro Gestor", "email": f"outrogestor_{generate_random_string()}@test.com", "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": "123", "perfil_id": self.seed_ids['perfil_gestor']}
+        r_outro_gestor = requests.post(f'{BASE_URL}/usuarios', json=outro_gestor_payload, headers=self.admin_headers)
+        outro_gestor_id = r_outro_gestor.json()['id']
+        self.created_ids['outro_gestor'] = outro_gestor_id # Adiciona para limpeza
+        
+        outro_contrato_form = {
+            "nr_contrato": f"WF-OUTRO-{generate_random_string()}", "objeto": "Outro Contrato", "data_inicio": "2025-01-01", "data_fim": "2025-12-31",
+            "contratado_id": self.created_ids['contratado'], "modalidade_id": self.seed_ids['modalidade'], "status_id": self.seed_ids['status_vigente'], 
+            "gestor_id": outro_gestor_id, "fiscal_id": outro_gestor_id # Fiscal e gestor são a mesma pessoa
+        }
+        r_outro_contrato = requests.post(f'{BASE_URL}/contratos', json=outro_contrato_form, headers=self.admin_headers)
+        outro_contrato_id = r_outro_contrato.json()['id']
+        self.created_ids['outro_contrato'] = outro_contrato_id # Adiciona para limpeza
+
+        # Fiscal principal tenta enviar relatório para o contrato que não é dele (deve falhar)
+        r_permissao = requests.post(f'{BASE_URL}/contratos/{outro_contrato_id}/relatorios', data={'pendencia_id': 999}, headers=fiscal_headers)
+        self.assertIn(r_permissao.status_code, [400, 403, 404])
+        print(" -> Fiscal foi bloqueado de interagir com um contrato que não é seu.")
+        
+    def test_09_data_integrity_and_constraints(self):
+        """ Testa a integridade dos dados, como a prevenção de exclusão de dados em uso e o soft delete. """
+        print("\nPASSO 9: Testando integridade de dados e restrições.")
+        
+        # --- Cenário 1: Proteção contra exclusão de entidade em uso ---
+        contratado_payload = {"nome": f"Contratado Protegido", "email": f"protegido_{generate_random_string()}@test.com"}
+        r_contratado = requests.post(f'{BASE_URL}/contratados', json=contratado_payload, headers=self.admin_headers)
+        contratado_id = r_contratado.json()['id']
+        
+        contrato_payload = {
+            "nr_contrato": f"WF-INTEGRITY-{generate_random_string()}", "objeto": "Contrato para Teste de Integridade", "data_inicio": "2025-01-01", "data_fim": "2025-12-31",
+            "contratado_id": contratado_id, "modalidade_id": self.seed_ids['modalidade'], "status_id": self.seed_ids['status_vigente'],
+            "gestor_id": self.created_ids['gestor'], "fiscal_id": self.created_ids['fiscal']
+        }
+        r_contrato = requests.post(f'{BASE_URL}/contratos', json=contrato_payload, headers=self.admin_headers)
+        contrato_id_integridade = r_contrato.json()['id']
+
+        # Tenta deletar o contratado que está em uso (deve falhar)
+        r_delete_fail = requests.delete(f"{BASE_URL}/contratados/{contratado_id}", headers=self.admin_headers)
+        self.assertIn(r_delete_fail.status_code, [409, 500])
+        print(" -> API protegeu contra a exclusão de um contratado em uso.")
+
+        # Limpeza do Cenário 1
+        requests.delete(f"{BASE_URL}/contratos/{contrato_id_integridade}", headers=self.admin_headers)
+        requests.delete(f"{BASE_URL}/contratados/{contratado_id}", headers=self.admin_headers)
+
+        # --- Cenário 2: Validação de Soft Delete ---
+        # Cria um usuário para ser deletado
+        user_payload = {"nome": "Usuário a ser deletado", "email": f"deleteme_{generate_random_string()}@test.com", "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": "123", "perfil_id": self.seed_ids['perfil_fiscal']}
+        r_user = requests.post(f'{BASE_URL}/usuarios', json=user_payload, headers=self.admin_headers)
+        user_id_todelete = r_user.json()['id']
+        
+        # Verifica que o usuário está na lista
+        r_users_before = requests.get(f'{BASE_URL}/usuarios', headers=self.admin_headers).json()
+        self.assertTrue(any(user['id'] == user_id_todelete for user in r_users_before))
+        print(f" -> Usuário {user_id_todelete} existe na lista antes do delete.")
+        
+        # Deleta o usuário (soft delete)
+        requests.delete(f"{BASE_URL}/usuarios/{user_id_todelete}", headers=self.admin_headers)
+        
+        # Verifica que o usuário NÃO está mais na lista
+        r_users_after = requests.get(f'{BASE_URL}/usuarios', headers=self.admin_headers).json()
+        self.assertFalse(any(user['id'] == user_id_todelete for user in r_users_after))
+        print(f" -> Usuário {user_id_todelete} não existe mais na lista após o soft delete, como esperado.")
+
     @classmethod
     def tearDownClass(cls):
         """ Limpa todos os recursos criados durante os testes. """
         print("\n--- INICIANDO LIMPEZA DO AMBIENTE DE TESTE ---")
         
         # A ordem de deleção é importante para evitar erros de chave estrangeira
+        if 'outro_contrato' in cls.created_ids:
+            requests.delete(f"{BASE_URL}/contratos/{cls.created_ids['outro_contrato']}", headers=cls.admin_headers)
+        if 'outro_gestor' in cls.created_ids:
+            requests.delete(f"{BASE_URL}/usuarios/{cls.created_ids['outro_gestor']}", headers=cls.admin_headers)
+
         if 'contrato' in cls.created_ids:
             r = requests.delete(f"{BASE_URL}/contratos/{cls.created_ids['contrato']}", headers=cls.admin_headers)
             print(f"Contrato ID {cls.created_ids['contrato']} deletado (Status: {r.status_code}).")
