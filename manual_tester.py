@@ -7,6 +7,7 @@ from pprint import pprint
 # --- Configuração ---
 BASE_URL = 'http://127.0.0.1:5000'
 CURRENT_USER = None
+AUTH_TOKEN = None # Variável para armazenar o token JWT
 
 # --- Funções Auxiliares ---
 
@@ -18,7 +19,14 @@ def wait_for_enter():
     """Pausa a execução até o usuário pressionar Enter."""
     input("\nPressione Enter para continuar...")
 
+def get_auth_headers():
+    """Retorna os cabeçalhos de autenticação se um token existir."""
+    if AUTH_TOKEN:
+        return {'Authorization': f'Bearer {AUTH_TOKEN}'}
+    return {}
+
 def handle_response(response):
+    """Lida com a resposta de uma requisição, imprimindo sucesso ou erro."""
     print("-" * 50)
     if 200 <= response.status_code < 300:
         print("✅ SUCESSO!")
@@ -37,8 +45,10 @@ def handle_response(response):
         return None
 
 def get_entities(endpoint):
+    """Busca e exibe uma lista de entidades de um endpoint da API."""
     try:
-        response = requests.get(f"{BASE_URL}{endpoint}")
+        headers = get_auth_headers()
+        response = requests.get(f"{BASE_URL}{endpoint}", headers=headers)
         if response.status_code == 200:
             entities = response.json()
             if not entities:
@@ -51,12 +61,43 @@ def get_entities(endpoint):
                 if 'nr_contrato' in item: line += f" Número: {item.get('nr_contrato', '')}"
                 print(line)
             return entities
+        elif response.status_code == 401:
+            print("ERRO: Token de autenticação inválido ou expirado. Faça login novamente.")
+            return None
         else:
             handle_response(response)
             return None
     except requests.exceptions.ConnectionError:
         print("ERRO: Não foi possível conectar à API. O servidor Flask está rodando?")
         return None
+
+# --- Fluxo de Login ---
+
+def login_flow():
+    """Gerencia o processo de login do usuário."""
+    global CURRENT_USER, AUTH_TOKEN
+    clear_screen()
+    print("--- LOGIN ---")
+    email = input("Email: ")
+    senha = input("Senha: ")
+
+    try:
+        response = requests.post(f"{BASE_URL}/auth/login", json={'email': email, 'senha': senha})
+        if response.status_code == 200:
+            data = response.json()
+            AUTH_TOKEN = data['token']
+            CURRENT_USER = data['usuario']
+            print("\n✅ Login bem-sucedido!")
+            wait_for_enter()
+            return True
+        else:
+            handle_response(response)
+            wait_for_enter()
+            return False
+    except requests.exceptions.ConnectionError:
+        print("ERRO: Não foi possível conectar à API para fazer login.")
+        wait_for_enter()
+        return False
 
 # --- Menus de Atores (Admin, Fiscal, Gestor) ---
 
@@ -68,7 +109,7 @@ def admin_menu():
         print("1. Gerenciar Contratos")
         print("2. Gerenciar Usuários")
         print("3. Gerenciar Contratados")
-        print("4. Voltar para seleção de perfil")
+        print("4. Logout (Voltar para tela de login)")
         
         choice = input("> ")
         if choice == '1':
@@ -88,7 +129,7 @@ def fiscal_menu():
         print("-" * 50)
         print("1. Ver Meus Contratos e Pendências")
         print("2. Submeter / Reenviar Relatório")
-        print("3. Voltar para seleção de perfil")
+        print("3. Logout (Voltar para tela de login)")
 
         choice = input("> ")
         if choice == '1':
@@ -97,13 +138,8 @@ def fiscal_menu():
             if contratos:
                 for contrato in contratos:
                     print(f"\n--- Detalhes do Contrato ID {contrato['id']} ({contrato.get('nr_contrato', '')}) ---")
-                    
-                    pendencias_url = f"/contratos/{contrato['id']}/pendencias"
-                    get_entities(pendencias_url)
-
-                    # A API precisa de uma rota para listar relatórios de um contrato
-                    # get_entities(f"/contratos/{contrato['id']}/relatorios")
-                    
+                    get_entities(f"/contratos/{contrato['id']}/pendencias")
+                    get_entities(f"/contratos/{contrato['id']}/relatorios")
             wait_for_enter()
         elif choice == '2':
             submit_report_flow()
@@ -120,7 +156,7 @@ def gestor_menu():
         print(f"Você está atuando como: {CURRENT_USER['nome']} (Gestor)")
         print("-" * 50)
         print("1. Ver Meus Contratos")
-        print("2. Voltar para seleção de perfil")
+        print("2. Logout (Voltar para tela de login)")
 
         choice = input("> ")
         if choice == '1':
@@ -176,31 +212,31 @@ def get_contract_details_flow():
         return
     try:
         contrato_id = int(input("\nDigite o ID do contrato para ver os detalhes: "))
-        response = requests.get(f"{BASE_URL}/contratos/{contrato_id}")
+        response = requests.get(f"{BASE_URL}/contratos/{contrato_id}", headers=get_auth_headers())
         
         print("-" * 50)
         if response.status_code == 200:
             print("✅ SUCESSO! Detalhes do Contrato:")
             data = response.json()
             
+            # Imprime os detalhes do contrato, exceto a lista de relatórios que será impressa depois
             for key, value in data.items():
-                if key != 'relatorios_fiscais':
+                if key not in ['relatorios_fiscais', 'pendencias']:
                     print(f"  - {key}: {value}")
 
+            # Mostra link do documento do contrato, se houver
             if data.get('documento') and data.get('documento_nome_arquivo'):
                 print("\n--- Documento Principal do Contrato ---")
                 print(f"  Nome do Arquivo: {data['documento_nome_arquivo']}")
                 print(f"  Link para Download: {BASE_URL}/arquivos/{data['documento']}/download")
-            
-            if data.get('relatorios_fiscais'):
-                print("\n--- Relatórios Fiscais Vinculados ---")
-                for relatorio in data['relatorios_fiscais']:
-                    print(f"  > Relatório ID: {relatorio['id']} | Status: {relatorio['status_relatorio']}")
-                    print(f"    Arquivo: {relatorio['nome_arquivo']} | Enviado por: {relatorio['enviado_por']}")
-                    print(f"    Link para Download: {BASE_URL}/arquivos/{relatorio['arquivo_id']}/download")
-                    print("-" * 20)
-            else:
-                print("\n--- Nenhum Relatório Fiscal vinculado a este contrato. ---")
+
+            # Lista as pendências
+            print("\n--- Pendências do Contrato ---")
+            get_entities(f"/contratos/{contrato_id}/pendencias")
+
+            # Lista os relatórios
+            print("\n--- Relatórios do Contrato ---")
+            get_entities(f"/contratos/{contrato_id}/relatorios")
 
         else:
             handle_response(response)
@@ -233,7 +269,7 @@ def update_contract_flow():
             wait_for_enter()
             return
         
-        response = requests.patch(f"{BASE_URL}/contratos/{contrato_id}", json=payload)
+        response = requests.patch(f"{BASE_URL}/contratos/{contrato_id}", json=payload, headers=get_auth_headers())
         handle_response(response)
     except ValueError:
         print("ID inválido.")
@@ -249,16 +285,16 @@ def delete_contract_flow():
         contrato_id = int(input("\nDigite o ID do contrato a ser desativado: "))
         confirm = input(f"Tem certeza que deseja desativar o contrato ID {contrato_id}? [s/N]: ")
         if confirm.lower() == 's':
-            response = requests.delete(f"{BASE_URL}/contratos/{contrato_id}")
+            response = requests.delete(f"{BASE_URL}/contratos/{contrato_id}", headers=get_auth_headers())
             handle_response(response)
         else:
             print("Operação cancelada.")
     except ValueError:
         print("ID inválido.")
     wait_for_enter()
-    
+
 def manage_users_admin():
-    """Submenu do Admin para gerenciar usuários."""
+    # ... (sem mudanças)
     while True:
         clear_screen()
         print(f"Você está atuando como: {CURRENT_USER['nome']} (Admin)")
@@ -284,9 +320,9 @@ def manage_users_admin():
             reset_password_flow()
         elif choice == '6':
             return
-
+            
 def manage_contractors_admin():
-    """Submenu do Admin para gerenciar contratados."""
+    # ... (sem mudanças)
     while True:
         clear_screen()
         print(f"Você está atuando como: {CURRENT_USER['nome']} (Admin)")
@@ -323,74 +359,83 @@ def create_user_flow():
         'senha': input("Senha: ")
     }
     if get_entities("/perfis"):
-        payload['perfil_id'] = int(input("ID do Perfil: "))
+        try:
+            payload['perfil_id'] = int(input("ID do Perfil: "))
+        except ValueError:
+            print("ID de perfil inválido.")
+            wait_for_enter()
+            return
     
     print("\nEnviando dados...")
-    response = requests.post(f"{BASE_URL}/usuarios", json=payload)
+    response = requests.post(f"{BASE_URL}/usuarios", json=payload, headers=get_auth_headers())
     handle_response(response)
     wait_for_enter()
 
 def update_user_flow():
     clear_screen()
     print("--- ATUALIZAR USUÁRIO ---")
-    users = get_entities("/usuarios")
-    if not users:
+    if not get_entities("/usuarios"):
         wait_for_enter()
         return
     
-    user_id = int(input("\nDigite o ID do usuário que deseja atualizar: "))
-    print("Deixe o campo em branco para não alterar.")
-    
-    payload = {}
-    nome = input("Novo nome: ")
-    if nome: payload['nome'] = nome
-    
-    email = input("Novo email: ")
-    if email: payload['email'] = email
-
-    if not payload:
-        print("Nenhum dado para atualizar.")
-        wait_for_enter()
-        return
+    try:
+        user_id = int(input("\nDigite o ID do usuário que deseja atualizar: "))
+        print("Deixe o campo em branco para não alterar.")
         
-    print("\nEnviando dados...")
-    response = requests.patch(f"{BASE_URL}/usuarios/{user_id}", json=payload)
-    handle_response(response)
+        payload = {}
+        nome = input("Novo nome: ")
+        if nome: payload['nome'] = nome
+        
+        email = input("Novo email: ")
+        if email: payload['email'] = email
+
+        if not payload:
+            print("Nenhum dado para atualizar.")
+            wait_for_enter()
+            return
+            
+        print("\nEnviando dados...")
+        response = requests.patch(f"{BASE_URL}/usuarios/{user_id}", json=payload, headers=get_auth_headers())
+        handle_response(response)
+    except ValueError:
+        print("ID inválido.")
     wait_for_enter()
 
 def delete_user_flow():
     clear_screen()
     print("--- DELETAR (DESATIVAR) USUÁRIO ---")
-    users = get_entities("/usuarios")
-    if not users:
+    if not get_entities("/usuarios"):
         wait_for_enter()
         return
-    
-    user_id = int(input("\nDigite o ID do usuário que deseja deletar (desativar): "))
-    confirm = input(f"Tem certeza que deseja desativar o usuário ID {user_id}? [s/N]: ")
+    try:
+        user_id = int(input("\nDigite o ID do usuário que deseja deletar (desativar): "))
+        confirm = input(f"Tem certeza que deseja desativar o usuário ID {user_id}? [s/N]: ")
 
-    if confirm.lower() == 's':
-        print("\nEnviando requisição...")
-        response = requests.delete(f"{BASE_URL}/usuarios/{user_id}")
-        handle_response(response)
-    else:
-        print("Operação cancelada.")
+        if confirm.lower() == 's':
+            print("\nEnviando requisição...")
+            response = requests.delete(f"{BASE_URL}/usuarios/{user_id}", headers=get_auth_headers())
+            handle_response(response)
+        else:
+            print("Operação cancelada.")
+    except ValueError:
+        print("ID inválido.")
     wait_for_enter()
 
 def reset_password_flow():
     clear_screen()
     print("--- RESETAR SENHA DE USUÁRIO ---")
-    users = get_entities("/usuarios")
-    if not users:
+    if not get_entities("/usuarios"):
         wait_for_enter()
         return
-    
-    user_id = int(input("\nDigite o ID do usuário para resetar a senha: "))
-    nova_senha = input("Digite a NOVA senha: ")
+    try:
+        user_id = int(input("\nDigite o ID do usuário para resetar a senha: "))
+        nova_senha = input("Digite a NOVA senha: ")
 
-    print("\nEnviando dados...")
-    response = requests.patch(f"{BASE_URL}/usuarios/{user_id}/resetar-senha", json={'nova_senha': nova_senha})
-    handle_response(response)
+        print("\nEnviando dados...")
+        response = requests.patch(f"{BASE_URL}/usuarios/{user_id}/resetar-senha", json={'nova_senha': nova_senha}, headers=get_auth_headers())
+        handle_response(response)
+    except ValueError:
+        print("ID inválido.")
     wait_for_enter()
 
 def create_contractor_flow():
@@ -404,128 +449,110 @@ def create_contractor_flow():
         'telefone': input("Telefone (opcional): ")
     }
     print("\nEnviando dados...")
-    response = requests.post(f"{BASE_URL}/contratados", json=payload)
+    response = requests.post(f"{BASE_URL}/contratados", json=payload, headers=get_auth_headers())
     handle_response(response)
     wait_for_enter()
 
 def update_contractor_flow():
     clear_screen()
     print("--- ATUALIZAR CONTRATADO ---")
-    contractors = get_entities("/contratados")
-    if not contractors:
+    if not get_entities("/contratados"):
         wait_for_enter()
         return
-    
-    contractor_id = int(input("\nDigite o ID do contratado que deseja atualizar: "))
-    print("Deixe o campo em branco para não alterar.")
-    
-    payload = {}
-    nome = input("Novo nome/razão social: ")
-    if nome: payload['nome'] = nome
-    
-    email = input("Novo email: ")
-    if email: payload['email'] = email
-    
-    telefone = input("Novo telefone: ")
-    if telefone: payload['telefone'] = telefone
-
-    if not payload:
-        print("Nenhum dado para atualizar.")
-        wait_for_enter()
-        return
+    try:
+        contractor_id = int(input("\nDigite o ID do contratado que deseja atualizar: "))
+        print("Deixe o campo em branco para não alterar.")
         
-    print("\nEnviando dados...")
-    response = requests.patch(f"{BASE_URL}/contratados/{contractor_id}", json=payload)
-    handle_response(response)
+        payload = {}
+        nome = input("Novo nome/razão social: ")
+        if nome: payload['nome'] = nome
+        
+        email = input("Novo email: ")
+        if email: payload['email'] = email
+        
+        telefone = input("Novo telefone: ")
+        if telefone: payload['telefone'] = telefone
+
+        if not payload:
+            print("Nenhum dado para atualizar.")
+            wait_for_enter()
+            return
+            
+        print("\nEnviando dados...")
+        response = requests.patch(f"{BASE_URL}/contratados/{contractor_id}", json=payload, headers=get_auth_headers())
+        handle_response(response)
+    except ValueError:
+        print("ID inválido.")
     wait_for_enter()
 
 def delete_contractor_flow():
     clear_screen()
     print("--- DELETAR (DESATIVAR) CONTRATADO ---")
-    contractors = get_entities("/contratados")
-    if not contractors:
+    if not get_entities("/contratados"):
         wait_for_enter()
         return
-    
-    contractor_id = int(input("\nDigite o ID do contratado que deseja deletar (desativar): "))
-    confirm = input(f"Tem certeza que deseja desativar o contratado ID {contractor_id}? [s/N]: ")
+    try:
+        contractor_id = int(input("\nDigite o ID do contratado que deseja deletar (desativar): "))
+        confirm = input(f"Tem certeza que deseja desativar o contratado ID {contractor_id}? [s/N]: ")
 
-    if confirm.lower() == 's':
-        print("\nEnviando requisição...")
-        response = requests.delete(f"{BASE_URL}/contratados/{contractor_id}")
-        handle_response(response)
-    else:
-        print("Operação cancelada.")
+        if confirm.lower() == 's':
+            print("\nEnviando requisição...")
+            response = requests.delete(f"{BASE_URL}/contratados/{contractor_id}", headers=get_auth_headers())
+            handle_response(response)
+        else:
+            print("Operação cancelada.")
+    except ValueError:
+        print("ID inválido.")
     wait_for_enter()
 
-# --- Copie e cole as funções que não mudaram ---
 def create_contract_flow():
-    """Fluxo guiado para criar um novo contrato, com todos os campos opcionais."""
+    """Fluxo guiado para criar um novo contrato."""
     clear_screen()
     print("--- CRIAR NOVO CONTRATO ---")
     print("Preencha os campos obrigatórios. Para os opcionais, pressione Enter para pular.")
     
-    # Dicionário para os dados do formulário
     form_data = {}
-    
-    # --- Campos Obrigatórios ---
-    form_data['nr_contrato'] = input("(*) Número do Contrato: ")
-    form_data['objeto'] = input("(*) Objeto do Contrato: ")
-    form_data['data_inicio'] = input("(*) Data de Início (AAAA-MM-DD): ")
-    form_data['data_fim'] = input("(*) Data de Fim (AAAA-MM-DD): ")
-
-    if get_entities("/contratados"):
-        form_data['contratado_id'] = input("(*) ID do Contratado: ")
-    if get_entities("/modalidades"):
-        form_data['modalidade_id'] = input("(*) ID da Modalidade: ")
-    if get_entities("/status"):
-        form_data['status_id'] = input("(*) ID do Status do Contrato: ")
-    
-    print("\n--- Seleção de Pessoal ---")
-    if get_entities("/usuarios"):
-        form_data['gestor_id'] = input("(*) ID do Gestor: ")
-        form_data['fiscal_id'] = input("(*) ID do Fiscal Principal: ")
-        # --- CAMPO OPCIONAL ADICIONADO ---
-        fiscal_sub_id = input("(Opcional) ID do Fiscal Substituto: ")
-        if fiscal_sub_id:
-            form_data['fiscal_substituto_id'] = fiscal_sub_id
-
-    # --- Campos Opcionais de Texto ---
-    print("\n--- Outros Dados (Opcional) ---")
-    valor_anual = input("(Opcional) Valor Anual: ")
-    if valor_anual: form_data['valor_anual'] = valor_anual
-    
-    valor_global = input("(Opcional) Valor Global: ")
-    if valor_global: form_data['valor_global'] = valor_global
-    
-    termos = input("(Opcional) Termos Contratuais: ")
-    if termos: form_data['termos_contratuais'] = termos
-
-    pae = input("(Opcional) Processo Administrativo (PAe): ")
-    if pae: form_data['pae'] = pae
-
-    # --- Anexo de Arquivo Opcional ---
-    print("\n--- Anexo do Contrato (Opcional) ---")
-    filepath = input("(Opcional) Caminho completo para o arquivo do contrato (PDF, etc.): ")
-
-    print("\nEnviando dados para a API...")
-
-    files = {}
     try:
+        form_data['nr_contrato'] = input("(*) Número do Contrato: ")
+        form_data['objeto'] = input("(*) Objeto do Contrato: ")
+        form_data['data_inicio'] = input("(*) Data de Início (AAAA-MM-DD): ")
+        form_data['data_fim'] = input("(*) Data de Fim (AAAA-MM-DD): ")
+
+        if get_entities("/contratados"): form_data['contratado_id'] = input("(*) ID do Contratado: ")
+        if get_entities("/modalidades"): form_data['modalidade_id'] = input("(*) ID da Modalidade: ")
+        if get_entities("/status"): form_data['status_id'] = input("(*) ID do Status do Contrato: ")
+        
+        print("\n--- Seleção de Pessoal ---")
+        if get_entities("/usuarios"):
+            form_data['gestor_id'] = input("(*) ID do Gestor: ")
+            form_data['fiscal_id'] = input("(*) ID do Fiscal Principal: ")
+            fiscal_sub_id = input("(Opcional) ID do Fiscal Substituto: ")
+            if fiscal_sub_id: form_data['fiscal_substituto_id'] = fiscal_sub_id
+
+        print("\n--- Outros Dados (Opcional) ---")
+        form_data['valor_anual'] = input("(Opcional) Valor Anual: ")
+        form_data['valor_global'] = input("(Opcional) Valor Global: ")
+        form_data['termos_contratuais'] = input("(Opcional) Termos Contratuais: ")
+        form_data['pae'] = input("(Opcional) Processo Administrativo (PAe): ")
+
+        print("\n--- Anexo do Contrato (Opcional) ---")
+        filepath = input("(Opcional) Caminho completo para o arquivo do contrato: ")
+
+        print("\nEnviando dados para a API...")
+
+        files = {}
         if filepath and os.path.exists(filepath):
             filename = os.path.basename(filepath)
             files = {'documento_contrato': (filename, open(filepath, 'rb'))}
             print(f"Anexando arquivo: {filename}")
         
-        # Requisição é POST, com 'data' para os campos do formulário e 'files' para o anexo
-        response = requests.post(f"{BASE_URL}/contratos", data=form_data, files=files)
+        response = requests.post(f"{BASE_URL}/contratos", data=form_data, files=files, headers=get_auth_headers())
         handle_response(response)
 
     except Exception as e:
         print(f"Ocorreu um erro: {e}")
     finally:
-        # Garante que o arquivo seja fechado
-        if 'documento_contrato' in files:
+        if 'documento_contrato' in files and files['documento_contrato']:
             files['documento_contrato'][1].close()
 
     wait_for_enter()
@@ -538,94 +565,74 @@ def create_pendencia_flow():
         wait_for_enter()
         return
     
-    contrato_id = int(input("Para qual Contrato (ID) deseja criar a pendência? "))
-    
-    payload = {
-        'descricao': input("Descrição da pendência: "),
-        'data_prazo': input("Data Prazo (AAAA-MM-DD): "),
-        'criado_por_usuario_id': CURRENT_USER['id']
-    }
-
-    if get_entities("/statuspendencia"):
-        payload['status_pendencia_id'] = int(input("ID do Status da Pendência: "))
-        
-    print("\nEnviando dados para a API...")
-    response = requests.post(f"{BASE_URL}/contratos/{contrato_id}/pendencias", json=payload)
-    handle_response(response)
+    try:
+        contrato_id = int(input("Para qual Contrato (ID) deseja criar a pendência? "))
+        payload = { 'descricao': input("Descrição da pendência: "), 'data_prazo': input("Data Prazo (AAAA-MM-DD): "), 'criado_por_usuario_id': CURRENT_USER['id'] }
+        if get_entities("/statuspendencia"):
+            payload['status_pendencia_id'] = int(input("ID do Status da Pendência (Ex: 'Pendente'): "))
+            
+        print("\nEnviando dados para a API...")
+        response = requests.post(f"{BASE_URL}/contratos/{contrato_id}/pendencias", json=payload, headers=get_auth_headers())
+        handle_response(response)
+    except (ValueError, TypeError):
+        print("ID inválido.")
     wait_for_enter()
 
 def submit_report_flow():
-    """Fluxo guiado e CORRIGIDO para o Fiscal submeter um relatório."""
+    """Fluxo guiado para o Fiscal submeter um relatório."""
     clear_screen()
-    print("--- SUBMETER RELATÓRIO DE PENDÊNCIA ---")
+    print("--- SUBMETER/REENVIAR RELATÓRIO ---")
     
-    print("\nBuscando contratos com pendências ativas para você...")
-    contratos = get_entities(f"/contratos?fiscal_id={CURRENT_USER['id']}")
-    if not contratos:
+    if not get_entities(f"/contratos?fiscal_id={CURRENT_USER['id']}"):
         wait_for_enter()
         return
-
-    # Filtra e mostra apenas as pendências que estão aguardando ação do fiscal
-    pendencias_disponiveis = []
-    for contrato in contratos:
-        pendencias_response = requests.get(f"{BASE_URL}/contratos/{contrato['id']}/pendencias")
-        if pendencias_response.status_code == 200:
-            pendencias = pendencias_response.json()
-            if pendencias:
-                for p in pendencias:
-                    # Ação é necessária se a pendência estiver 'Pendente' ou 'Rejeitada'
-                    if p.get('status_nome') in ['Pendente', 'Rejeitado com Pendência']:
-                        print(f"\nContrato ID: {contrato['id']} - {contrato.get('nr_contrato')}")
-                        print(f"  -> Pendência ID: {p['id']} | Status: {p['status_nome']}")
-                        print(f"     Descrição: {p['descricao']}")
-                        print(f"     Prazo: {p.get('data_prazo')}")
-                        pendencias_disponiveis.append(p)
-    
-    if not pendencias_disponiveis:
-        print("\nNenhuma pendência ativa encontrada para os seus contratos.")
-        wait_for_enter()
-        return
-
+        
     try:
-        pendencia_id_str = input("\nPara qual Pendência (ID) você deseja enviar o relatório? ")
-        pendencia_id = int(pendencia_id_str)
+        contrato_id = int(input("\nPara qual Contrato (ID) é o relatório? "))
         
-        # Encontra o contrato_id a partir da pendência escolhida
-        contrato_id = None
-        for p in pendencias_disponiveis:
-            if p['id'] == pendencia_id:
-                contrato_id = p['contrato_id']
-                break
-        
-        if not contrato_id:
-            print("ID de pendência inválido.")
+        print(f"\nBuscando pendências e relatórios para o Contrato {contrato_id}...")
+        get_entities(f"/contratos/{contrato_id}/pendencias")
+        get_entities(f"/contratos/{contrato_id}/relatorios")
+
+        choice = input("Você vai (1) Responder a uma Pendência ou (2) Reenviar um Relatório Rejeitado? ")
+
+        if choice == '1': # Responder a uma pendência nova
+            pendencia_id = input("Qual o ID da Pendência que você está respondendo? ")
+            form_data = {'pendencia_id': pendencia_id}
+            endpoint = f'{BASE_URL}/contratos/{contrato_id}/relatorios'
+            method = 'POST'
+        elif choice == '2': # Reenviar um relatório
+            relatorio_id = input("Qual o ID do Relatório que você está reenviando? ")
+            form_data = {} # Não precisa de pendencia_id no reenvio
+            endpoint = f'{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}'
+            method = 'PUT' # Método de atualização
+        else:
+            print("Opção inválida.")
             wait_for_enter()
             return
-
-        filepath = input("Digite o caminho completo para o arquivo (ex: /home/user/relatorio.pdf): ")
+            
+        filepath = input("Digite o caminho completo para o arquivo do relatório: ")
         if not os.path.exists(filepath):
             print("ERRO: Arquivo não encontrado.")
             wait_for_enter()
             return
 
-        form_data = {
-            'mes_competencia': input("Mês de Competência (AAAA-MM-DD): "),
-            'fiscal_usuario_id': CURRENT_USER['id'],
-            'observacoes_fiscal': input("Observações (opcional): "),
-            'pendencia_id': pendencia_id
-        }
+        # Campos comuns para envio e reenvio
+        if method == 'POST': # Apenas no envio inicial
+             form_data['mes_competencia'] = input("Mês de Competência (AAAA-MM-DD): ")
+        form_data['fiscal_usuario_id'] = CURRENT_USER['id']
+        form_data['observacoes_fiscal'] = input("Observações (opcional): ")
         
         print("\nEnviando arquivo e dados para a API...")
         with open(filepath, "rb") as f:
             filename = os.path.basename(filepath)
             files = {'arquivo': (filename, f)}
-            # O fiscal não envia mais o status, a API define automaticamente
-            response = requests.post(f'{BASE_URL}/contratos/{contrato_id}/relatorios', data=form_data, files=files)
+            response = requests.request(method, endpoint, data=form_data, files=files, headers=get_auth_headers())
+        
         handle_response(response)
 
-    except (ValueError, TypeError):
-        print("Entrada inválida.")
-    
+    except (ValueError, TypeError) as e:
+        print(f"Entrada inválida: {e}")
     wait_for_enter()
 
 def analise_relatorio_flow():
@@ -638,100 +645,61 @@ def analise_relatorio_flow():
     
     try:
         contrato_id = int(input("De qual Contrato (ID) você quer ver os relatórios? "))
-        
-        print(f"\nBuscando relatórios para o contrato {contrato_id}...")
-        
-        # CORREÇÃO: Chama a nova rota para listar os relatórios
-        relatorios = get_entities(f"/contratos/{contrato_id}/relatorios")
-        if not relatorios:
+        if not get_entities(f"/contratos/{contrato_id}/relatorios"):
             wait_for_enter()
             return
 
         relatorio_id = int(input("\nQual Relatório (ID) você quer analisar? "))
-
-        print("\nOpções de Status de Relatório:")
-        status_relatorios = get_entities("/statusrelatorio")
-        if not status_relatorios:
+        if not get_entities("/statusrelatorio"):
             wait_for_enter()
             return
         
         status_id = int(input("Qual o novo Status (ID) para este relatório? "))
         observacoes = input("Observações da análise (obrigatório se for rejeitado): ")
 
-        payload = {
-            "aprovador_usuario_id": CURRENT_USER['id'],
-            "status_id": status_id,
-            "observacoes_aprovador": observacoes
-        }
+        payload = { "aprovador_usuario_id": CURRENT_USER['id'], "status_id": status_id, "observacoes_aprovador": observacoes }
         
-        response = requests.patch(f"{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}/analise", json=payload)
+        response = requests.patch(f"{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}/analise", json=payload, headers=get_auth_headers())
         handle_response(response)
 
     except (ValueError, TypeError):
         print("Entrada inválida. Por favor, digite um número de ID.")
-    
     wait_for_enter()
+
+# --- Função Principal ---
 
 def main():
     """Função principal que inicia o seletor de perfil."""
-    global CURRENT_USER
+    global CURRENT_USER, AUTH_TOKEN
     
     while True:
         clear_screen()
+        # Reseta o estado a cada loop
+        CURRENT_USER = None
+        AUTH_TOKEN = None
+
         print("Bem-vindo ao Testador Manual da API SIGESCON!")
         print("=" * 50)
         
-        users = get_entities("/usuarios")
-        if not users:
-            print("\nNão foi possível buscar usuários. O servidor está rodando? Saindo.")
-            break
-            
-        choice = input("\nDigite o ID do usuário para assumir o papel (ou 'sair'): ")
+        if not login_flow():
+            choice = input("Não foi possível logar. Tentar novamente? (s/N): ")
+            if choice.lower() != 's':
+                break # Sai do programa se não quiser tentar novamente
+            else:
+                continue # Volta ao início do loop para tentar o login
+
+        # Se o login foi bem-sucedido, CURRENT_USER estará preenchido
+        perfil_nome = CURRENT_USER.get('perfil')
         
-        if choice.lower() == 'sair':
-            break
-        
-        try:
-            user_id = int(choice)
-            user_found = False
-            for user in users:
-                if user['id'] == user_id:
-                    CURRENT_USER = user
-                    user_found = True
-                    perfil_id = user['perfil_id']
-                    
-                    perfil_nome = "Desconhecido"
-                    perfis = requests.get(f"{BASE_URL}/perfis").json()
-                    if perfis:
-                        for perfil in perfis:
-                            if perfil['id'] == perfil_id:
-                                perfil_nome = perfil['nome']
-                                break
-                    
-                    if perfil_nome == 'Administrador':
-                        admin_menu()
-                    elif perfil_nome == 'Fiscal':
-                        fiscal_menu()
-                    elif perfil_nome == 'Gestor':
-                        gestor_menu()
-                    else:
-                        print(f"Perfil '{perfil_nome}' não tem um menu definido.")
-                        wait_for_enter()
-                    break
-            if not user_found:
-                print("ID de usuário inválido.")
-                wait_for_enter()
-        except (ValueError, TypeError, requests.exceptions.ConnectionError) as e:
-            print(f"Ocorreu um erro: {e}. Verifique se a API está no ar.")
+        if perfil_nome == 'Administrador':
+            admin_menu()
+        elif perfil_nome == 'Fiscal':
+            fiscal_menu()
+        elif perfil_nome == 'Gestor':
+            gestor_menu()
+        else:
+            print(f"Perfil '{perfil_nome}' não tem um menu definido.")
             wait_for_enter()
 
-
-
 if __name__ == "__main__":
-    # Carrega as funções que não mudaram para o escopo global
-    fiscal_menu = globals().get('fiscal_menu', fiscal_menu)
-    gestor_menu = globals().get('gestor_menu', gestor_menu)
-    admin_contracts_menu = globals().get('admin_contracts_menu', admin_contracts_menu)
     main()
-    
-    

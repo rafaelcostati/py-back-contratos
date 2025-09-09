@@ -28,7 +28,8 @@ def login():
     
     # Cria o payload (carga útil) do token com informações adicionais
     additional_claims = {"perfil": perfil_nome}
-    access_token = create_access_token(identity=usuario['id'], additional_claims=additional_claims)
+    access_token = create_access_token(identity=str(usuario['id']), additional_claims=additional_claims)
+
     
     # Retorna o token e os dados do usuário
     return jsonify({

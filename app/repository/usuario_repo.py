@@ -37,7 +37,7 @@ def find_user_by_email(email):
 def get_all_users():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    sql = "SELECT id, nome, cfp, email, matricula, perfil_id FROM usuario WHERE ativo = TRUE ORDER BY nome"
+    sql = "SELECT id, nome, cpf, email, matricula, perfil_id FROM usuario WHERE ativo = TRUE ORDER BY nome"
     cursor.execute(sql)
     users = cursor.fetchall()
     cursor.close()
