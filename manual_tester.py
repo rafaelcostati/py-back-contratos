@@ -388,6 +388,22 @@ def update_user_flow():
         
         email = input("Novo email: ")
         if email: payload['email'] = email
+        
+        # --- CAMPOS ADICIONADOS ---
+        cpf = input("Novo CPF (apenas números): ")
+        if cpf: payload['cpf'] = cpf
+
+        matricula = input("Nova Matrícula: ")
+        if matricula: payload['matricula'] = matricula
+
+        # Permite alterar o perfil
+        if get_entities("/perfis"):
+            perfil_id = input("Novo ID do Perfil: ")
+            if perfil_id:
+                try:
+                    payload['perfil_id'] = int(perfil_id)
+                except ValueError:
+                    print("ID de perfil inválido, este campo será ignorado.")
 
         if not payload:
             print("Nenhum dado para atualizar.")
@@ -398,8 +414,9 @@ def update_user_flow():
         response = requests.patch(f"{BASE_URL}/usuarios/{user_id}", json=payload, headers=get_auth_headers())
         handle_response(response)
     except ValueError:
-        print("ID inválido.")
+        print("ID de usuário inválido.")
     wait_for_enter()
+
 
 def delete_user_flow():
     clear_screen()
