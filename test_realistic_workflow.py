@@ -1,35 +1,60 @@
+# test_realistic_workflow.py
 import unittest
 import requests
 import os
 import random
 import string
 from dotenv import load_dotenv, find_dotenv
+from pprint import pprint
 
-# --- CORREÇÃO: Carrega as variáveis de ambiente do .env ---
+# Carrega as variáveis de ambiente do .env
 load_dotenv(find_dotenv())
 
 BASE_URL = 'http://127.0.0.1:5000'
+# Caminhos para os arquivos de teste
+PDF_CONTRATO_PATH = '/home/rafael/py-back-contratos/teste.pdf'
+TXT_RELATORIO_PATH = '/home/rafael/py-back-contratos/relatorio_teste.txt'
+
 
 def generate_random_string(length=8):
+    """Gera uma string aleatória para criar dados únicos."""
     return ''.join(random.choice(string.ascii_lowercase) for _ in range(length))
 
-class TestRealisticWorkflow(unittest.TestCase):
+class TestFullWorkflow(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
-        """Prepara o ambiente para o fluxo de teste completo."""
-        print("\n--- INICIANDO PREPARAÇÃO DO FLUXO DE TESTE REALÍSTICO ---")
+        """
+        Prepara o ambiente antes de todos os testes.
+        Cria usuários, obtém IDs e tokens de autenticação.
+        """
+        print("\n--- INICIANDO PREPARAÇÃO DO AMBIENTE DE TESTE COMPLETO ---")
         
         cls.created_ids = {}
         cls.seed_ids = {}
+        cls.auth_tokens = {}
 
+        # --- 1. Login como Admin e Obtenção do Token de Admin ---
+        admin_email = os.getenv('ADMIN_EMAIL')
+        admin_password = os.getenv('ADMIN_PASSWORD')
+        assert admin_email and admin_password, "ADMIN_EMAIL e ADMIN_PASSWORD devem estar no .env"
+        
+        r_login_admin = requests.post(f'{BASE_URL}/auth/login', json={'email': admin_email, 'senha': admin_password})
+        assert r_login_admin.status_code == 200, "Falha ao fazer login como Admin. Verifique as credenciais no .env e se o seeder foi executado."
+        cls.auth_tokens['admin'] = r_login_admin.json()['token']
+        cls.created_ids['admin'] = r_login_admin.json()['usuario']['id']
+        print("-> Login como Admin bem-sucedido.")
+
+        # Headers de autenticação para o admin
+        cls.admin_headers = {'Authorization': f'Bearer {cls.auth_tokens["admin"]}'}
+
+        # --- 2. Função auxiliar para buscar IDs de dados do Seeder ---
         def get_id_by_name(endpoint, name):
-            url = f"{BASE_URL}{endpoint}"
-            r = requests.get(url)
-            assert r.status_code == 200, f"Falha ao buscar dados de {url}. Resposta: {r.text}"
+            r = requests.get(f"{BASE_URL}{endpoint}", headers=cls.admin_headers)
+            assert r.status_code == 200, f"Falha ao buscar dados de {endpoint}. Resposta: {r.text}"
             for item in r.json():
                 if item['nome'] == name: return item['id']
-            raise Exception(f"'{name}' não encontrado em {url}. O banco foi populado com 'flask seed-db'?")
+            raise Exception(f"'{name}' não encontrado em {endpoint}. O banco foi populado com 'flask seed-db'?")
 
         print("-> Buscando IDs dos dados do seed...")
         cls.seed_ids['perfil_gestor'] = get_id_by_name('/perfis', 'Gestor')
@@ -41,139 +66,218 @@ class TestRealisticWorkflow(unittest.TestCase):
         cls.seed_ids['status_relatorio_pendente'] = get_id_by_name('/statusrelatorio', 'Pendente de Análise')
         cls.seed_ids['status_relatorio_aprovado'] = get_id_by_name('/statusrelatorio', 'Aprovado')
         cls.seed_ids['status_relatorio_rejeitado'] = get_id_by_name('/statusrelatorio', 'Rejeitado com Pendência')
-        
-        # Pega o ID do Admin criado pelo seeder
-        admin_email = os.getenv('ADMIN_EMAIL') # Agora vai ler o .env corretamente
-        assert admin_email, "A variável ADMIN_EMAIL não foi encontrada no arquivo .env"
-        
-        r_users = requests.get(f'{BASE_URL}/usuarios')
-        cls.created_ids['admin'] = next(user['id'] for user in r_users.json() if user['email'] == admin_email)
         print("-> IDs do seed carregados com sucesso.")
 
+        # --- 3. Criando Atores (Contratado, Gestor, Fiscal) ---
         print("-> Criando atores para o teste (Contratado, Gestor, Fiscal)...")
         random_str = generate_random_string()
-        r_contratado = requests.post(f'{BASE_URL}/contratados', json={"nome": "Empresa de Teste de Workflow", "email": f"workflow_{random_str}@teste.com", "cnpj": f"{random.randint(10**13, 10**14-1)}"})
+        
+        # Contratado
+        r_contratado = requests.post(f'{BASE_URL}/contratados', json={"nome": "Empresa Workflow LTDA", "email": f"contratado_wf_{random_str}@teste.com", "cnpj": f"{random.randint(10**13, 10**14-1)}"}, headers=cls.admin_headers)
         cls.created_ids['contratado'] = r_contratado.json()['id']
         
-        r_gestor = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Gestor de Workflow", "email": f"gestor_wf_{random_str}@teste.com", "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": "123", "perfil_id": cls.seed_ids['perfil_gestor']})
+        # Gestor
+        gestor_email = f"gestor_wf_{random_str}@teste.com"
+        gestor_pass = "senha_gestor"
+        r_gestor = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Gestor de Workflow", "email": gestor_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": gestor_pass, "perfil_id": cls.seed_ids['perfil_gestor']}, headers=cls.admin_headers)
         cls.created_ids['gestor'] = r_gestor.json()['id']
 
-        r_fiscal = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Fiscal de Workflow", "email": f"fiscal_wf_{random_str}@teste.com", "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": "123", "perfil_id": cls.seed_ids['perfil_fiscal']})
+        # Fiscal
+        fiscal_email = f"fiscal_wf_{random_str}@teste.com"
+        fiscal_pass = "senha_fiscal"
+        r_fiscal = requests.post(f'{BASE_URL}/usuarios', json={"nome": "Fiscal de Workflow", "email": fiscal_email, "cpf": f"{random.randint(10**10, 10**11-1)}", "senha": fiscal_pass, "perfil_id": cls.seed_ids['perfil_fiscal']}, headers=cls.admin_headers)
         cls.created_ids['fiscal'] = r_fiscal.json()['id']
         
-        print(f"-> Atores criados com sucesso: Contratado({cls.created_ids['contratado']}), Gestor({cls.created_ids['gestor']}), Fiscal({cls.created_ids['fiscal']})")
-
-
-    def test_workflow_completo(self):
-        """Simula o fluxo de ponta a ponta com diferentes perfis."""
+        print(f"-> Atores criados: Contratado({cls.created_ids['contratado']}), Gestor({cls.created_ids['gestor']}), Fiscal({cls.created_ids['fiscal']})")
         
-        # --- PASSO 1 (Admin): Cria o Contrato ---
-        print("\nPASSO 1 (Admin): Criando o contrato...")
-        contrato_payload = {
-            "nr_contrato": f"WF-{generate_random_string()}", "objeto": "Contrato do Workflow de Teste",
+        # --- 4. Login como Gestor e Fiscal para obter seus tokens ---
+        r_login_gestor = requests.post(f'{BASE_URL}/auth/login', json={'email': gestor_email, 'senha': gestor_pass})
+        cls.auth_tokens['gestor'] = r_login_gestor.json()['token']
+        
+        r_login_fiscal = requests.post(f'{BASE_URL}/auth/login', json={'email': fiscal_email, 'senha': fiscal_pass})
+        cls.auth_tokens['fiscal'] = r_login_fiscal.json()['token']
+        print("-> Tokens de autenticação para Gestor e Fiscal foram obtidos.")
+
+    def test_01_admin_can_manage_contratados(self):
+        """ Testa o ciclo de vida completo (CRUD) de um Contratado pelo Admin. """
+        print("\nPASSO 1: Testando Gerenciamento de Contratados (Admin)")
+        random_str = generate_random_string()
+        
+        # CREATE
+        payload = {"nome": f"Contratado Teste CRUD {random_str}", "email": f"crud_{random_str}@teste.com", "cnpj": f"{random.randint(10**13, 10**14-1)}"}
+        r_create = requests.post(f'{BASE_URL}/contratados', json=payload, headers=self.admin_headers)
+        self.assertEqual(r_create.status_code, 201)
+        contratado_id = r_create.json()['id']
+        print(f"-> Contratado {contratado_id} criado.")
+
+        # READ (By ID)
+        r_read = requests.get(f'{BASE_URL}/contratados/{contratado_id}', headers=self.admin_headers)
+        self.assertEqual(r_read.status_code, 200)
+        self.assertEqual(r_read.json()['nome'], payload['nome'])
+        print(f"-> Contratado {contratado_id} lido com sucesso.")
+
+        # UPDATE
+        update_payload = {"nome": f"Contratado Teste CRUD Alterado {random_str}"}
+        r_update = requests.patch(f'{BASE_URL}/contratados/{contratado_id}', json=update_payload, headers=self.admin_headers)
+        self.assertEqual(r_update.status_code, 200)
+        self.assertEqual(r_update.json()['nome'], update_payload['nome'])
+        print(f"-> Contratado {contratado_id} atualizado.")
+
+        # DELETE
+        r_delete = requests.delete(f'{BASE_URL}/contratados/{contratado_id}', headers=self.admin_headers)
+        self.assertEqual(r_delete.status_code, 204)
+        r_verify_delete = requests.get(f'{BASE_URL}/contratados/{contratado_id}', headers=self.admin_headers)
+        self.assertEqual(r_verify_delete.status_code, 404)
+        print(f"-> Contratado {contratado_id} deletado.")
+
+    def test_02_permission_denied_for_non_admins(self):
+        """ Testa se usuários não-admin (Fiscal, Gestor) são bloqueados de rotas de admin. """
+        print("\nPASSO 2: Testando restrições de permissão")
+        
+        # Fiscal tentando criar um usuário (deve falhar)
+        fiscal_headers = {'Authorization': f'Bearer {self.auth_tokens["fiscal"]}'}
+        payload = {"nome": "Tentativa Fiscal", "email": "tentativa@fiscal.com", "senha": "123", "perfil_id": self.seed_ids['perfil_fiscal']}
+        r_fiscal = requests.post(f'{BASE_URL}/usuarios', json=payload, headers=fiscal_headers)
+        self.assertEqual(r_fiscal.status_code, 403)
+        print("-> Fiscal foi corretamente bloqueado de criar usuários.")
+        
+        # Gestor tentando listar todos os contratados (deve funcionar, pois é rota JWT)
+        gestor_headers = {'Authorization': f'Bearer {self.auth_tokens["gestor"]}'}
+        r_gestor_get = requests.get(f'{BASE_URL}/contratados', headers=gestor_headers)
+        self.assertEqual(r_gestor_get.status_code, 200)
+        print("-> Gestor conseguiu listar contratados (rota @jwt_required).")
+
+        # Gestor tentando deletar um contratado (deve falhar)
+        r_gestor_del = requests.delete(f"{BASE_URL}/contratados/{self.created_ids['contratado']}", headers=gestor_headers)
+        self.assertEqual(r_gestor_del.status_code, 403)
+        print("-> Gestor foi corretamente bloqueado de deletar contratados.")
+
+    def test_03_full_contract_and_report_workflow(self):
+        """ Simula o fluxo de ponta a ponta: criação, pendência, envio e aprovação. """
+        print("\nPASSO 3: Iniciando fluxo completo de Contrato e Relatório")
+        
+        # --- ETAPA 1 (Admin): Cria o Contrato com anexo ---
+        print(" -> ETAPA 1 (Admin): Criando o contrato com anexo...")
+        self.assertTrue(os.path.exists(PDF_CONTRATO_PATH), f"Arquivo de contrato não encontrado em {PDF_CONTRATO_PATH}")
+
+        form_data = {
+            "nr_contrato": f"WF-FULL-{generate_random_string()}", "objeto": "Contrato do Workflow Completo",
             "data_inicio": "2025-01-01", "data_fim": "2025-12-31",
             "contratado_id": self.created_ids['contratado'], "modalidade_id": self.seed_ids['modalidade'],
             "status_id": self.seed_ids['status_vigente'], "gestor_id": self.created_ids['gestor'], 
-            "fiscal_id": self.created_ids['fiscal'], "fiscal_substituto_id": self.created_ids['fiscal']
+            "fiscal_id": self.created_ids['fiscal']
         }
-        r = requests.post(f'{BASE_URL}/contratos', json=contrato_payload); self.assertEqual(r.status_code, 201)
-        contrato_id = r.json()['id']
+        with open(PDF_CONTRATO_PATH, 'rb') as f:
+            files = {'documento_contrato': (os.path.basename(PDF_CONTRATO_PATH), f, 'application/pdf')}
+            r_contrato = requests.post(f'{BASE_URL}/contratos', data=form_data, files=files, headers=self.admin_headers)
+        
+        self.assertEqual(r_contrato.status_code, 201)
+        contrato_id = r_contrato.json()['id']
         self.__class__.created_ids['contrato'] = contrato_id
-        print(f"-> Contrato ID {contrato_id} criado.")
+        print(f" -> Contrato ID {contrato_id} criado.")
 
-        # --- PASSO 2 (Admin): Cria a Pendência ---
-        print("\nPASSO 2 (Admin): Criando pendência para o fiscal...")
+        # --- ETAPA 2 (Admin): Cria a Pendência ---
+        print(" -> ETAPA 2 (Admin): Criando pendência para o fiscal...")
         pendencia_payload = {
             "descricao": "Relatório inicial de atividades.", "data_prazo": "2025-02-28",
             "status_pendencia_id": self.seed_ids['status_pendencia_pendente'], 
             "criado_por_usuario_id": self.created_ids['admin']
         }
-        r = requests.post(f'{BASE_URL}/contratos/{contrato_id}/pendencias', json=pendencia_payload); self.assertEqual(r.status_code, 201)
-        pendencia_id = r.json()['id']
-        print(f"-> Pendência ID {pendencia_id} criada.")
+        r_pendencia = requests.post(f'{BASE_URL}/contratos/{contrato_id}/pendencias', json=pendencia_payload, headers=self.admin_headers)
+        self.assertEqual(r_pendencia.status_code, 201)
+        pendencia_id = r_pendencia.json()['id']
+        print(f" -> Pendência ID {pendencia_id} criada.")
         
-        # --- PASSO 3 (Fiscal): Envia o Relatório ---
-        print("\nPASSO 3 (Fiscal): Enviando o primeiro relatório...")
-        test_filename_1 = "relatorio_v1.txt"
-        with open(test_filename_1, "w") as f: f.write("Primeira versão do relatório.")
-        with open(test_filename_1, "rb") as f:
-            files = {'arquivo': (test_filename_1, f, 'text/plain')}
+        # --- ETAPA 3 (Fiscal): Envia o Relatório ---
+        print(" -> ETAPA 3 (Fiscal): Enviando o primeiro relatório...")
+        self.assertTrue(os.path.exists(TXT_RELATORIO_PATH), f"Arquivo de relatório não encontrado em {TXT_RELATORIO_PATH}")
+        fiscal_headers = {'Authorization': f'Bearer {self.auth_tokens["fiscal"]}'}
+        
+        with open(TXT_RELATORIO_PATH, "rb") as f:
+            files = {'arquivo': (os.path.basename(TXT_RELATORIO_PATH), f, 'text/plain')}
             form_data = {
                 'mes_competencia': '2025-01-01', 'fiscal_usuario_id': self.created_ids['fiscal'],
-                'status_id': self.seed_ids['status_relatorio_pendente'], 'pendencia_id': pendencia_id
+                'pendencia_id': pendencia_id
             }
-            r = requests.post(f'{BASE_URL}/contratos/{contrato_id}/relatorios', data=form_data, files=files)
-        os.remove(test_filename_1)
-        self.assertEqual(r.status_code, 201, f"Falha ao enviar relatório: {r.text}")
-        relatorio_id = r.json()['id']
-        self.__class__.created_ids['relatorio'] = relatorio_id
-        print(f"-> Relatório ID {relatorio_id} enviado pelo fiscal.")
+            r_relatorio = requests.post(f'{BASE_URL}/contratos/{contrato_id}/relatorios', data=form_data, files=files, headers=fiscal_headers)
         
-        # --- PASSO 4 (Admin): Rejeita o Relatório ---
-        print("\nPASSO 4 (Admin): Rejeitando o relatório com observações...")
+        self.assertEqual(r_relatorio.status_code, 201, f"Falha ao enviar relatório: {r_relatorio.text}")
+        relatorio_id = r_relatorio.json()['id']
+        self.__class__.created_ids['relatorio'] = relatorio_id
+        print(f" -> Relatório ID {relatorio_id} enviado pelo fiscal.")
+        
+        # --- ETAPA 4 (Admin): Rejeita o Relatório ---
+        print(" -> ETAPA 4 (Admin): Rejeitando o relatório com observações...")
         analise_payload = {
             "aprovador_usuario_id": self.created_ids['admin'],
             "status_id": self.seed_ids['status_relatorio_rejeitado'],
             "observacoes_aprovador": "Faltou incluir o anexo B. Corrija e reenvie."
         }
-        r = requests.patch(f'{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}/analise', json=analise_payload)
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()['status_id'], self.seed_ids['status_relatorio_rejeitado'])
-        print("-> Relatório rejeitado com sucesso.")
+        r_rejeita = requests.patch(f'{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}/analise', json=analise_payload, headers=self.admin_headers)
+        self.assertEqual(r_rejeita.status_code, 200)
+        self.assertEqual(r_rejeita.json()['status_id'], self.seed_ids['status_relatorio_rejeitado'])
+        print(" -> Relatório rejeitado com sucesso.")
         
-        # --- PASSO 5 (Fiscal): Reenvia o Relatório ---
-        print("\nPASSO 5 (Fiscal): Reenviando o relatório corrigido...")
-        test_filename_2 = "relatorio_v2.txt"
-        with open(test_filename_2, "w") as f: f.write("Segunda versão corrigida do relatório com anexo B.")
-        with open(test_filename_2, "rb") as f:
-            files = {'arquivo': (test_filename_2, f, 'text/plain')}
+        # --- ETAPA 5 (Fiscal): Reenvia o Relatório Corrigido ---
+        print(" -> ETAPA 5 (Fiscal): Reenviando o relatório corrigido...")
+        with open(TXT_RELATORIO_PATH, "rb") as f:
+            files = {'arquivo': ('relatorio_v2.txt', f, 'text/plain')}
             form_data = {'observacoes_fiscal': 'Correções aplicadas conforme solicitado.'}
-            r = requests.put(f'{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}', data=form_data, files=files)
-        os.remove(test_filename_2)
-        self.assertEqual(r.status_code, 200, f"Falha ao reenviar relatório: {r.text}")
-        self.assertEqual(r.json()['status_id'], self.seed_ids['status_relatorio_pendente'])
-        print(f"-> Relatório ID {relatorio_id} reenviado com sucesso e status 'Pendente de Análise'.")
+            r_reenvio = requests.put(f'{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}', data=form_data, files=files, headers=fiscal_headers)
         
-        # --- PASSO 6 (Admin): Aprova o Relatório Final ---
-        print("\nPASSO 6 (Admin): Aprovando o relatório final...")
+        self.assertEqual(r_reenvio.status_code, 200, f"Falha ao reenviar relatório: {r_reenvio.text}")
+        self.assertEqual(r_reenvio.json()['status_id'], self.seed_ids['status_relatorio_pendente'])
+        print(f" -> Relatório ID {relatorio_id} reenviado e status 'Pendente de Análise'.")
+        
+        # --- ETAPA 6 (Admin): Aprova o Relatório Final ---
+        print(" -> ETAPA 6 (Admin): Aprovando o relatório final...")
         analise_aprovacao_payload = { "aprovador_usuario_id": self.created_ids['admin'], "status_id": self.seed_ids['status_relatorio_aprovado'] }
-        r = requests.patch(f'{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}/analise', json=analise_aprovacao_payload)
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()['status_id'], self.seed_ids['status_relatorio_aprovado'])
-        print("-> Relatório final aprovado.")
+        r_aprova = requests.patch(f'{BASE_URL}/contratos/{contrato_id}/relatorios/{relatorio_id}/analise', json=analise_aprovacao_payload, headers=self.admin_headers)
+        self.assertEqual(r_aprova.status_code, 200)
+        self.assertEqual(r_aprova.json()['status_id'], self.seed_ids['status_relatorio_aprovado'])
+        print(" -> Relatório final aprovado.")
         
-        # --- PASSO 7 (Gestor): Consulta seus contratos ---
-        print("\nPASSO 7 (Gestor): Verificando se consegue ver apenas seu contrato...")
-        r = requests.get(f"{BASE_URL}/contratos?gestor_id={self.created_ids['gestor']}")
-        self.assertEqual(r.status_code, 200)
-        contratos_gestor = r.json()
+        # --- ETAPA 7 (Gestor): Consulta seus contratos ---
+        print(" -> ETAPA 7 (Gestor): Verificando se consegue ver o contrato...")
+        gestor_headers = {'Authorization': f'Bearer {self.auth_tokens["gestor"]}'}
+        r_gestor_lista = requests.get(f"{BASE_URL}/contratos?gestor_id={self.created_ids['gestor']}", headers=gestor_headers)
+        self.assertEqual(r_gestor_lista.status_code, 200)
+        contratos_gestor = r_gestor_lista.json()
         self.assertEqual(len(contratos_gestor), 1)
         self.assertEqual(contratos_gestor[0]['id'], contrato_id)
-        print("-> Consulta de contratos por gestor funciona corretamente.")
+        print(" -> Consulta de contratos por gestor funciona corretamente.")
         
-        # --- PASSO 8 (Admin): Altera o status do ciclo de vida do contrato ---
-        print("\nPASSO 8 (Admin): Alterando o status do ciclo de vida do contrato...")
-        r = requests.patch(f'{BASE_URL}/contratos/{contrato_id}', json={"status_id": self.seed_ids['status_suspenso']})
-        self.assertEqual(r.status_code, 200)
-        r_verify = requests.get(f'{BASE_URL}/contratos/{contrato_id}')
+        # --- ETAPA 8 (Admin): Altera o status do contrato ---
+        print(" -> ETAPA 8 (Admin): Alterando o status do ciclo de vida do contrato...")
+        r_patch_contrato = requests.patch(f'{BASE_URL}/contratos/{contrato_id}', json={"status_id": self.seed_ids['status_suspenso']}, headers=self.admin_headers)
+        self.assertEqual(r_patch_contrato.status_code, 200)
+        r_verify = requests.get(f'{BASE_URL}/contratos/{contrato_id}', headers=self.admin_headers)
         self.assertEqual(r_verify.json()['status_nome'], 'Suspenso')
-        print("-> Status do contrato alterado com sucesso.")
+        print(" -> Status do contrato alterado com sucesso para 'Suspenso'.")
+
 
     @classmethod
     def tearDownClass(cls):
+        """ Limpa todos os recursos criados durante os testes. """
         print("\n--- INICIANDO LIMPEZA DO AMBIENTE DE TESTE ---")
+        
+        # A ordem de deleção é importante para evitar erros de chave estrangeira
         if 'contrato' in cls.created_ids:
-            requests.delete(f"{BASE_URL}/contratos/{cls.created_ids['contrato']}")
-            print(f"Contrato ID {cls.created_ids['contrato']} deletado.")
+            r = requests.delete(f"{BASE_URL}/contratos/{cls.created_ids['contrato']}", headers=cls.admin_headers)
+            print(f"Contrato ID {cls.created_ids['contrato']} deletado (Status: {r.status_code}).")
+
         if 'gestor' in cls.created_ids:
-            requests.delete(f"{BASE_URL}/usuarios/{cls.created_ids['gestor']}")
-            print(f"Usuário Gestor ID {cls.created_ids['gestor']} deletado.")
+            r = requests.delete(f"{BASE_URL}/usuarios/{cls.created_ids['gestor']}", headers=cls.admin_headers)
+            print(f"Usuário Gestor ID {cls.created_ids['gestor']} deletado (Status: {r.status_code}).")
+
         if 'fiscal' in cls.created_ids:
-            requests.delete(f"{BASE_URL}/usuarios/{cls.created_ids['fiscal']}")
-            print(f"Usuário Fiscal ID {cls.created_ids['fiscal']} deletado.")
+            r = requests.delete(f"{BASE_URL}/usuarios/{cls.created_ids['fiscal']}", headers=cls.admin_headers)
+            print(f"Usuário Fiscal ID {cls.created_ids['fiscal']} deletado (Status: {r.status_code}).")
+
         if 'contratado' in cls.created_ids:
-            requests.delete(f"{BASE_URL}/contratados/{cls.created_ids['contratado']}")
-            print(f"Contratado ID {cls.created_ids['contratado']} deletado.")
+            r = requests.delete(f"{BASE_URL}/contratados/{cls.created_ids['contratado']}", headers=cls.admin_headers)
+            print(f"Contratado ID {cls.created_ids['contratado']} deletado (Status: {r.status_code}).")
+            
         print("Limpeza concluída.")
 
 

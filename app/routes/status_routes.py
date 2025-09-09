@@ -6,7 +6,7 @@ from app.auth_decorators import admin_required
 
 bp = Blueprint('status', __name__, url_prefix='/status')
 
-@bp.route('/', methods=['POST'])
+@bp.route('', methods=['POST'])
 @admin_required()
 def create():
     data = request.get_json()

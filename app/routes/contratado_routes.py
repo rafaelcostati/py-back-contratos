@@ -6,7 +6,7 @@ from app.auth_decorators import admin_required
 
 bp = Blueprint('contratados', __name__, url_prefix='/contratados')
 
-@bp.route('/', methods=['POST'])
+@bp.route('', methods=['POST'])
 @admin_required()
 def create():
     data = request.get_json()
@@ -26,7 +26,7 @@ def create():
         # Tratamento de erro para CNPJ/CPF/Email duplicados
         return jsonify({'error': f'Erro ao criar contratado: {e}'}), 409
 
-@bp.route('/', methods=['GET'])
+@bp.route('', methods=['GET'])
 @jwt_required()
 def list_all():
     contratados = contratado_repo.get_all_contratados()

@@ -26,19 +26,28 @@ def create():
     if usuario_repo.find_user_by_id(data['fiscal_id']) is None: return jsonify({'error': 'Fiscal não encontrado'}), 404
         
     try:
+        # LÓGICA CORRIGIDA
+        # 1. Cria o contrato primeiro, sem a informação do documento
+        new_contrato = contrato_repo.create_contrato(data)
+        
+        # 2. Verifica se há um arquivo para upload
         if 'documento_contrato' in request.files:
             file = request.files['documento_contrato']
             if file and file.filename != '':
                 from .relatorio_routes import _handle_file_upload
-                new_arquivo = _handle_file_upload(data['contratado_id'], file_key='documento_contrato')
-                data['documento'] = new_arquivo['id']
+                # 3. Faz o upload do arquivo usando o ID do contrato recém-criado
+                new_arquivo = _handle_file_upload(new_contrato['id'], file_key='documento_contrato')
+                
+                # 4. Atualiza o contrato com o ID do novo arquivo
+                update_data = {'documento': new_arquivo['id']}
+                new_contrato = contrato_repo.update_contrato(new_contrato['id'], update_data)
 
-        new_contrato = contrato_repo.create_contrato(data)
         return jsonify(new_contrato), 201
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 400
     except Exception as e:
         return jsonify({'error': f'Erro ao criar contrato: {e}'}), 500
+
 
 @bp.route('', methods=['GET'])
 @jwt_required()

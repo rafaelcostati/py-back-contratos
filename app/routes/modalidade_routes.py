@@ -6,7 +6,7 @@ from app.auth_decorators import admin_required
 
 bp = Blueprint('modalidades', __name__, url_prefix='/modalidades')
 
-@bp.route('/', methods=['POST'])
+@bp.route('', methods=['POST'])
 @jwt_required()
 def create():
     data = request.get_json()
