@@ -2,10 +2,13 @@
 from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.repository import usuario_repo
+from flask_jwt_extended import jwt_required, get_jwt
+from app.auth_decorators import admin_required
 
 bp = Blueprint('usuarios', __name__, url_prefix='/usuarios')
 
 @bp.route('', methods=['POST'])
+@admin_required()
 def create():
     data = request.get_json()
     if not data or not all(k in data for k in ('nome', 'email', 'senha')):
@@ -22,11 +25,13 @@ def create():
         return jsonify({'error': f'Erro ao criar usuário: {e}'}), 409
 
 @bp.route('', methods=['GET'])
+@admin_required()
 def list_all():
     users = usuario_repo.get_all_users()
     return jsonify(users), 200
 
 @bp.route('/<int:id>', methods=['GET'])
+@jwt_required()
 def get_by_id(id):
     user = usuario_repo.find_user_by_id(id)
     if user is None:
@@ -34,6 +39,7 @@ def get_by_id(id):
     return jsonify(user), 200
 
 @bp.route('/<int:id>', methods=['PATCH'])
+@admin_required()
 def update(id):
     data = request.get_json()
     if not data:
@@ -47,6 +53,7 @@ def update(id):
         return jsonify({'error': f'Erro ao atualizar usuário: {e}'}), 500
 
 @bp.route('/<int:id>', methods=['DELETE'])
+@admin_required()
 def delete(id):
     if usuario_repo.find_user_by_id(id) is None:
         return jsonify({'error': 'Usuário não encontrado'}), 404
@@ -57,6 +64,7 @@ def delete(id):
         return jsonify({'error': f'Erro ao deletar usuário: {e}'}), 500
 
 @bp.route('/<int:id>/resetar-senha', methods=['PATCH'])
+@admin_required()
 def admin_reset_password(id):
     data = request.get_json()
     if not data or 'nova_senha' not in data:
@@ -73,6 +81,7 @@ def admin_reset_password(id):
         return jsonify({'error': f'Erro ao resetar senha: {e}'}), 500
 
 @bp.route('/<int:id>/alterar-senha', methods=['PATCH'])
+@jwt_required()
 def user_change_password(id):
     data = request.get_json()
     if not data or not all(k in data for k in ('senha_antiga', 'nova_senha')):

@@ -55,7 +55,7 @@ def update_relatorio_reenvio(relatorio_id, novo_arquivo_id, observacoes_fiscal):
     """Atualiza um relatório que foi reenviado pelo fiscal."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # Status volta para "Pendente de Análise" (vamos assumir que o ID é 1)
+    
     status_pendente_analise_id = 1 
     sql = """
         UPDATE relatoriofiscal

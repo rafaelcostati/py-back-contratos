@@ -80,8 +80,7 @@ def get_all_contratos(filters=None):
 def find_contrato_by_id(contrato_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # --- QUERY ATUALIZADA ---
-    # Adicionamos um JOIN com a tabela 'arquivo' para buscar o nome do documento do contrato
+
     sql = """
         SELECT
             c.*,

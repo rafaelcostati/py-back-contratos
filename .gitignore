@@ -6,3 +6,4 @@ reset_database.py
 uploads/
 __pycache__/
 *.pdf
+*.txt

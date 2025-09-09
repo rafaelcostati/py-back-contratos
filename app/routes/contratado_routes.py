@@ -1,10 +1,13 @@
 # app/routes/contratado_routes.py
 from flask import Blueprint, request, jsonify
 from app.repository import contratado_repo
+from flask_jwt_extended import jwt_required
+from app.auth_decorators import admin_required
 
 bp = Blueprint('contratados', __name__, url_prefix='/contratados')
 
 @bp.route('/', methods=['POST'])
+@admin_required()
 def create():
     data = request.get_json()
     if not data or 'nome' not in data or 'email' not in data:
@@ -24,11 +27,13 @@ def create():
         return jsonify({'error': f'Erro ao criar contratado: {e}'}), 409
 
 @bp.route('/', methods=['GET'])
+@jwt_required()
 def list_all():
     contratados = contratado_repo.get_all_contratados()
     return jsonify(contratados), 200
 
 @bp.route('/<int:id>', methods=['GET'])
+@jwt_required()
 def get_by_id(id):
     contratado = contratado_repo.find_contratado_by_id(id)
     if not contratado:
@@ -36,6 +41,7 @@ def get_by_id(id):
     return jsonify(contratado), 200
 
 @bp.route('/<int:id>', methods=['PATCH'])
+@admin_required()
 def update(id):
     data = request.get_json()
     if not data:
@@ -51,6 +57,7 @@ def update(id):
         return jsonify({'error': f'Erro ao atualizar contratado: {e}'}), 409
 
 @bp.route('/<int:id>', methods=['DELETE'])
+@admin_required()
 def delete(id):
     if contratado_repo.find_contratado_by_id(id) is None:
         return jsonify({'error': 'Contratado não encontrado'}), 404

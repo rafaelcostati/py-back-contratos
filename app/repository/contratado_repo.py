@@ -25,7 +25,6 @@ def create_contratado(nome, email, cnpj, cpf, telefone):
 def get_all_contratados():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # AJUSTE: Adicionado "WHERE ativo = TRUE"
     sql = "SELECT * FROM contratado WHERE ativo = TRUE ORDER BY nome"
     cursor.execute(sql)
     contratados = cursor.fetchall()
@@ -35,7 +34,6 @@ def get_all_contratados():
 def find_contratado_by_id(contratado_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # AJUSTE: Adicionado "WHERE ativo = TRUE"
     sql = "SELECT * FROM contratado WHERE id = %s AND ativo = TRUE"
     cursor.execute(sql, (contratado_id,))
     contratado = cursor.fetchone()
@@ -62,7 +60,6 @@ def update_contratado(contratado_id, data):
 def delete_contratado(contratado_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    # AJUSTE: Alterado de DELETE para UPDATE (Soft Delete)
     sql = "UPDATE contratado SET ativo = FALSE WHERE id = %s"
     try:
         cursor.execute(sql, (contratado_id,))

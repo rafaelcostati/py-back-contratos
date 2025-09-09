@@ -3,6 +3,8 @@ import os
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
 from app.repository import relatorio_repo, arquivo_repo, contrato_repo, status_pendencia_repo, usuario_repo, status_relatorio_repo, pendencia_repo
+from flask_jwt_extended import jwt_required
+from app.auth_decorators import admin_required, fiscal_required
 
 bp = Blueprint('relatorios', __name__, url_prefix='/contratos/<int:contrato_id>/relatorios')
 
@@ -40,6 +42,7 @@ def _handle_file_upload(contrato_id, file_key):
     return new_arquivo
 
 @bp.route('', methods=['POST'])
+@fiscal_required()
 def submit_relatorio(contrato_id):
     """Endpoint para um fiscal submeter um relatório EM RESPOSTA A UMA PENDÊNCIA."""
     if contrato_repo.find_contrato_by_id(contrato_id) is None:
@@ -92,6 +95,7 @@ def submit_relatorio(contrato_id):
         return jsonify({'error': f'Erro ao processar o relatório: {e}'}), 500
 
 @bp.route('/<int:relatorio_id>/analise', methods=['PATCH'])
+@admin_required()
 def analisar_relatorio(contrato_id, relatorio_id):
     """Endpoint para um Administrador aprovar ou rejeitar um relatório."""
     data = request.get_json()
@@ -119,6 +123,7 @@ def analisar_relatorio(contrato_id, relatorio_id):
         return jsonify({'error': f'Erro ao analisar relatório: {e}'}), 500
 
 @bp.route('/<int:relatorio_id>', methods=['PUT'])
+@fiscal_required()
 def reenviar_relatorio(contrato_id, relatorio_id):
     """Endpoint para um Fiscal reenviar um relatório corrigido (com novo arquivo)."""
     # 1. Validações iniciais
@@ -153,6 +158,7 @@ def reenviar_relatorio(contrato_id, relatorio_id):
         return jsonify({'error': f'Erro ao reenviar o relatório: {e}'}), 500
     
 @bp.route('', methods=['GET'])
+@jwt_required()
 def list_relatorios(contrato_id):
     """Lista todos os relatórios de um contrato específico."""
     if contrato_repo.find_contrato_by_id(contrato_id) is None:

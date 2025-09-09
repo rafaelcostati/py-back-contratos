@@ -1,10 +1,13 @@
 # app/routes/contrato_routes.py
 from flask import Blueprint, request, jsonify
 from app.repository import contrato_repo, contratado_repo, modalidade_repo, relatorio_repo, status_repo, usuario_repo
+from flask_jwt_extended import jwt_required
+from app.auth_decorators import admin_required
 
 bp = Blueprint('contratos', __name__, url_prefix='/contratos')
 
 @bp.route('', methods=['POST'])
+@admin_required()
 def create():
     data = request.form.to_dict() if request.form else request.get_json()
 
@@ -38,6 +41,7 @@ def create():
         return jsonify({'error': f'Erro ao criar contrato: {e}'}), 500
 
 @bp.route('', methods=['GET'])
+@jwt_required()
 def list_all():
     filters = { 'gestor_id': request.args.get('gestor_id'), 'fiscal_id': request.args.get('fiscal_id') }
     active_filters = {k: v for k, v in filters.items() if v is not None}
@@ -45,6 +49,7 @@ def list_all():
     return jsonify(contratos), 200
 
 @bp.route('/<int:id>', methods=['GET'])
+@jwt_required()
 def get_by_id(id):
     contrato = contrato_repo.find_contrato_by_id(id)
     if not contrato:
@@ -59,6 +64,7 @@ def get_by_id(id):
     return jsonify(contrato), 200
 
 @bp.route('/<int:id>', methods=['PATCH'])
+@admin_required()
 def update(id):
     data = request.get_json()
     if not data: return jsonify({'error': 'Dados para atualização não fornecidos'}), 400
@@ -70,6 +76,7 @@ def update(id):
         return jsonify({'error': f'Erro ao atualizar contrato: {e}'}), 500
 
 @bp.route('/<int:id>', methods=['DELETE'])
+@admin_required()
 def delete(id):
     if contrato_repo.find_contrato_by_id(id) is None: return jsonify({'error': 'Contrato não encontrado'}), 404
     contrato_repo.delete_contrato(id)

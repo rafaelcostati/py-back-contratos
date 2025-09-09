@@ -1,12 +1,15 @@
 # app/routes/pendencia_routes.py
 from flask import Blueprint, request, jsonify
 from app.repository import pendencia_repo, contrato_repo, usuario_repo, status_pendencia_repo
+from flask_jwt_extended import jwt_required
+from app.auth_decorators import admin_required
 
 # O prefixo continua o mesmo
 bp = Blueprint('pendencias', __name__, url_prefix='/contratos/<int:contrato_id>/pendencias')
 
 
 @bp.route('', methods=['POST'])
+@admin_required()
 def create(contrato_id):
     """Cria uma nova pendência para o contrato especificado na URL."""
     data = request.get_json()
@@ -31,6 +34,7 @@ def create(contrato_id):
 
 
 @bp.route('', methods=['GET'])
+@jwt_required()
 def list_all(contrato_id):
     """Lista todas as pendências do contrato especificado na URL."""
     if contrato_repo.find_contrato_by_id(contrato_id) is None:

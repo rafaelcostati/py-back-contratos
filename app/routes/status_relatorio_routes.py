@@ -1,10 +1,13 @@
 # app/routes/status_relatorio_routes.py
 from flask import Blueprint, request, jsonify
 from app.repository import status_relatorio_repo
+from flask_jwt_extended import jwt_required
+from app.auth_decorators import admin_required
 
 bp = Blueprint('statusrelatorio', __name__, url_prefix='/statusrelatorio')
 
 @bp.route('', methods=['POST'])
+@admin_required()
 def create():
     data = request.get_json()
     if not data or 'nome' not in data:
@@ -17,6 +20,7 @@ def create():
 
 
 @bp.route('', methods=['GET'])
+@jwt_required()
 def list_all():
     items = status_relatorio_repo.get_all_statusrelatorio()
     return jsonify(items), 200

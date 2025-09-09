@@ -2,10 +2,13 @@
 import os
 from flask import Blueprint, send_from_directory, current_app, abort
 from app.repository import arquivo_repo
+from flask_jwt_extended import jwt_required
+from app.auth_decorators import admin_required
 
 bp = Blueprint('arquivos', __name__, url_prefix='/arquivos')
 
 @bp.route('/<int:arquivo_id>/download')
+@jwt_required()
 def download_file(arquivo_id):
     """Serve um arquivo para visualização/download."""
     try:
@@ -19,7 +22,7 @@ def download_file(arquivo_id):
         if not os.path.exists(os.path.join(directory, filename)):
             abort(404, description="Arquivo físico não encontrado no servidor.")
 
-        # 'as_attachment=True' força o download. Mude para False para tentar abrir no navegador.
+        # 'as_attachment=True' força o download. 'False' para tentar abrir no navegador.
         return send_from_directory(directory, filename, as_attachment=True)
 
     except Exception as e:

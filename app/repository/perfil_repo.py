@@ -23,3 +23,12 @@ def get_all_perfis():
     items = cursor.fetchall()
     cursor.close()
     return items
+
+def find_perfil_by_id(perfil_id):
+    """Busca um perfil pelo seu ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT * FROM perfil WHERE id = %s", (perfil_id,))
+    perfil = cursor.fetchone()
+    cursor.close()
+    return perfil
