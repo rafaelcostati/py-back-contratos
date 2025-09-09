@@ -10,10 +10,10 @@ from pprint import pprint
 # Carrega as variáveis de ambiente do .env
 load_dotenv(find_dotenv())
 
-BASE_URL = 'http://127.0.0.1:5000'
+BASE_URL = os.getenv('BASE_URL')
 # Caminhos para os arquivos de teste
-PDF_CONTRATO_PATH = '/home/rafael/py-back-contratos/teste.pdf'
-TXT_RELATORIO_PATH = '/home/rafael/py-back-contratos/relatorio_teste.txt'
+PDF_CONTRATO_PATH =  os.getenv('PDF_CONTRATO_PATH')
+TXT_RELATORIO_PATH = os.getenv('TXT_RELATORIO_PATH')
 
 
 def generate_random_string(length=8):
