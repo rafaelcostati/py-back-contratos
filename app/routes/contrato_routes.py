@@ -27,7 +27,6 @@ def create():
             file = request.files['documento_contrato']
             if file and file.filename != '':
                 from .relatorio_routes import _handle_file_upload
-                # CORREÇÃO: Passamos o file_key correto para a função
                 new_arquivo = _handle_file_upload(data['contratado_id'], file_key='documento_contrato')
                 data['documento'] = new_arquivo['id']
 

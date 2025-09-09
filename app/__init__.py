@@ -1,6 +1,7 @@
 # app/__init__.py
 import os
 from flask import Flask
+from flask_cors import CORS
 from . import db
 from .routes import (
     usuario_routes, contratado_routes, modalidade_routes, 
@@ -11,7 +12,7 @@ from .routes import (
 
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
-
+    CORS(app)
     upload_folder = os.path.join(app.instance_path, '..', 'uploads')
     os.makedirs(upload_folder, exist_ok=True)
     app.config['UPLOAD_FOLDER'] = upload_folder

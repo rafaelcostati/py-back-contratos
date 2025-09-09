@@ -129,7 +129,8 @@ def reenviar_relatorio(contrato_id, relatorio_id):
     filepath = None
     try:
         # 2. Lida com o upload do novo arquivo
-        new_arquivo = _handle_file_upload(contrato_id)
+        new_arquivo = _handle_file_upload(contrato_id, file_key='arquivo')
+
         filepath = new_arquivo['path_armazenamento']
         
         # 3. Atualiza o registro do relatório existente com o ID do novo arquivo
