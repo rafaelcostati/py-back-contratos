@@ -29,7 +29,13 @@ def create():
 @bp.route('', methods=['GET'])
 @jwt_required()
 def list_all():
-    contratados = contratado_repo.get_all_contratados()
+    filters = {}
+    nome_query = request.args.get('nome')
+    if nome_query:
+        filters['nome'] = nome_query
+    
+    contratados = contratado_repo.get_all_contratados(filters)
+
     return jsonify(contratados), 200
 
 @bp.route('/<int:id>', methods=['GET'])
@@ -67,7 +73,7 @@ def delete(id):
         return jsonify({
             'error': 'Este contratado não pode ser excluído pois está associado a um ou mais contratos.',
             'contratos': [{'id': c['id'], 'nr_contrato': c['nr_contrato']} for c in contratos_associados]
-        }), 409 # Retorna 409 Conflict
+        }), 409 
     
 
     contratado_repo.delete_contratado(id)

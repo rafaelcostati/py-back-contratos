@@ -27,7 +27,14 @@ def create():
 @bp.route('', methods=['GET'])
 @admin_required()
 def list_all():
-    users = usuario_repo.get_all_users()
+    
+    filters = {}
+    nome_query = request.args.get('nome')
+    if nome_query:
+        filters['nome'] = nome_query
+        
+    users = usuario_repo.get_all_users(filters)
+    
     return jsonify(users), 200
 
 @bp.route('/<int:id>', methods=['GET'])
@@ -46,6 +53,8 @@ def update(id):
         return jsonify({'error': 'Dados para atualização não fornecidos'}), 400
     if usuario_repo.find_user_by_id(id) is None:
         return jsonify({'error': 'Usuário não encontrado'}), 404
+    if 'senha' in data and data['senha']:
+        data['senha'] = generate_password_hash(data['senha'])
     try:
         updated_user = usuario_repo.update_user(id, data)
         return jsonify(updated_user), 200

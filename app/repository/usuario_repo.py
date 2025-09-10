@@ -34,11 +34,18 @@ def find_user_by_email(email):
     cursor.close()
     return user
 
-def get_all_users():
+def get_all_users(filters=None): 
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    sql = "SELECT id, nome, cpf, email, matricula, perfil_id FROM usuario WHERE ativo = TRUE ORDER BY nome"
-    cursor.execute(sql)
+    sql = "SELECT id, nome, cpf, email, matricula, perfil_id FROM usuario WHERE ativo = TRUE"
+    params = []
+    
+    if filters and 'nome' in filters:
+        sql += " AND nome ILIKE %s"
+        params.append(f"%{filters['nome']}%")
+
+    sql += " ORDER BY nome"
+    cursor.execute(sql, params)
     users = cursor.fetchall()
     cursor.close()
     return users

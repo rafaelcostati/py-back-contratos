@@ -22,11 +22,19 @@ def create_contratado(nome, email, cnpj, cpf, telefone):
         cursor.close()
     return new_contratado
 
-def get_all_contratados():
+def get_all_contratados(filters=None): # Alteramos a assinatura da função
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    sql = "SELECT * FROM contratado WHERE ativo = TRUE ORDER BY nome"
-    cursor.execute(sql)
+    sql = "SELECT * FROM contratado WHERE ativo = TRUE"
+    params = []
+
+    if filters and 'nome' in filters:
+        sql += " AND nome ILIKE %s"
+        params.append(f"%{filters['nome']}%")
+    
+    sql += " ORDER BY nome"
+    
+    cursor.execute(sql, params)
     contratados = cursor.fetchall()
     cursor.close()
     return contratados
