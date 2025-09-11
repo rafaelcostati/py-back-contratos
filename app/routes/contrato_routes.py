@@ -1,6 +1,8 @@
 # app/routes/contrato_routes.py
 import math
-from flask import Blueprint, request, jsonify
+import os
+from flask import Blueprint, request, jsonify, current_app
+from werkzeug.utils import secure_filename
 from app.email_utils import send_email
 from app.repository import contrato_repo, contratado_repo, modalidade_repo, relatorio_repo, status_repo, usuario_repo, arquivo_repo
 from flask_jwt_extended import jwt_required
@@ -11,7 +13,7 @@ bp = Blueprint('contratos', __name__, url_prefix='/contratos')
 @bp.route('', methods=['POST'])
 @admin_required()
 def create():
-    data = request.form.to_dict() if request.form else request.get_json()
+    data = request.form.to_dict()
 
     if not data:
         return jsonify({'error': 'Nenhum dado enviado'}), 400
@@ -29,11 +31,8 @@ def create():
     
     gestor = usuario_repo.find_user_by_id(data['gestor_id'])
     fiscal = usuario_repo.find_user_by_id(data['fiscal_id'])
-    if not gestor: return jsonify({'error': 'Gestor não encontrado'}), 404
-    if not fiscal: return jsonify({'error': 'Fiscal não encontrado'}), 404
     
     try:
-        
         new_contrato = contrato_repo.create_contrato(data)
         
         subject_gestor = "Você foi designado como Gestor de um novo contrato"
@@ -60,16 +59,32 @@ def create():
         """
         send_email(fiscal['email'], subject_fiscal, body_fiscal)
         
-        if 'documento_contrato' in request.files:
-            file = request.files['documento_contrato']
-            if file and file.filename != '':
-                from .relatorio_routes import _handle_file_upload
-                new_arquivo = _handle_file_upload(new_contrato['id'], file_key='documento_contrato')
-                
-                update_data = {'documento': new_arquivo['id']}
-                new_contrato = contrato_repo.update_contrato(new_contrato['id'], update_data)
+        if 'documentos_contrato' in request.files:
+            files = request.files.getlist('documentos_contrato')
 
-        return jsonify(new_contrato), 201
+            for file in files:
+                if file and file.filename != '':
+                    from .relatorio_routes import allowed_file
+                    if not allowed_file(file.filename):
+                        current_app.logger.warning(f"Arquivo '{file.filename}' pulado devido a tipo não permitido.")
+                        continue
+
+                    filename = secure_filename(file.filename)
+                    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+                    file.save(filepath)
+                    file_size = os.path.getsize(filepath)
+
+                    arquivo_repo.create_arquivo(
+                        nome_arquivo=filename,
+                        path_armazenamento=filepath,
+                        tipo_arquivo=file.mimetype,
+                        tamanho_bytes=file_size,
+                        contrato_id=new_contrato['id']
+                    )
+
+        final_contrato = contrato_repo.find_contrato_by_id(new_contrato['id'])
+        return jsonify(final_contrato), 201
+        
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 400
     except Exception as e:
@@ -145,12 +160,41 @@ def get_by_id(id):
 @bp.route('/<int:id>', methods=['PATCH'])
 @admin_required()
 def update(id):
-    data = request.get_json()
-    if not data: return jsonify({'error': 'Dados para atualização não fornecidos'}), 400
-    if contrato_repo.find_contrato_by_id(id) is None: return jsonify({'error': 'Contrato não encontrado'}), 404
+    if contrato_repo.find_contrato_by_id(id) is None:
+        return jsonify({'error': 'Contrato não encontrado'}), 404
+
+    data = request.form.to_dict()
+    
     try:
-        updated_contrato = contrato_repo.update_contrato(id, data)
+        if data:
+            contrato_repo.update_contrato(id, data)
+
+        if 'documentos_contrato' in request.files:
+            files = request.files.getlist('documentos_contrato')
+
+            for file in files:
+                if file and file.filename != '':
+                    from .relatorio_routes import allowed_file
+                    if not allowed_file(file.filename):
+                        current_app.logger.warning(f"Arquivo '{file.filename}' pulado devido a tipo não permitido.")
+                        continue
+                    
+                    filename = secure_filename(file.filename)
+                    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+                    file.save(filepath)
+                    file_size = os.path.getsize(filepath)
+
+                    arquivo_repo.create_arquivo(
+                        nome_arquivo=filename,
+                        path_armazenamento=filepath,
+                        tipo_arquivo=file.mimetype,
+                        tamanho_bytes=file_size,
+                        contrato_id=id
+                    )
+        
+        updated_contrato = contrato_repo.find_contrato_by_id(id)
         return jsonify(updated_contrato), 200
+
     except Exception as e:
         return jsonify({'error': f'Erro ao atualizar contrato: {e}'}), 500
 
@@ -164,7 +208,6 @@ def delete(id):
 @bp.route('/<int:contrato_id>/arquivos', methods=['GET'])
 @jwt_required()
 def list_contract_files(contrato_id):
-    """Lista todos os arquivos associados a um contrato."""
     if contrato_repo.find_contrato_by_id(contrato_id) is None:
         return jsonify({'error': 'Contrato não encontrado'}), 404
     
