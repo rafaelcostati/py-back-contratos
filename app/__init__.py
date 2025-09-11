@@ -1,4 +1,5 @@
 # app/__init__.py
+from datetime import timedelta
 import os
 from flask import Flask
 from flask_cors import CORS
@@ -16,10 +17,13 @@ def create_app(test_config=None):
     app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY') 
     jwt = JWTManager(app)
     
+    
     CORS(app, resources={r"/*": {"origins": "*"}})
     upload_folder = os.path.join(app.instance_path, '..', 'uploads')
     os.makedirs(upload_folder, exist_ok=True)
     app.config['UPLOAD_FOLDER'] = upload_folder
+    
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=12)
 
     db.init_app(app)
 
