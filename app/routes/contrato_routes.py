@@ -1,7 +1,7 @@
 # app/routes/contrato_routes.py
 from flask import Blueprint, request, jsonify
 from app.email_utils import send_email
-from app.repository import contrato_repo, contratado_repo, modalidade_repo, relatorio_repo, status_repo, usuario_repo
+from app.repository import contrato_repo, contratado_repo, modalidade_repo, relatorio_repo, status_repo, usuario_repo, arquivo_repo
 from flask_jwt_extended import jwt_required
 from app.auth_decorators import admin_required
 
@@ -121,3 +121,17 @@ def delete(id):
     if contrato_repo.find_contrato_by_id(id) is None: return jsonify({'error': 'Contrato não encontrado'}), 404
     contrato_repo.delete_contrato(id)
     return '', 204
+
+@bp.route('/<int:contrato_id>/arquivos', methods=['GET'])
+@jwt_required()
+def list_contract_files(contrato_id):
+    """Lista todos os arquivos associados a um contrato."""
+    if contrato_repo.find_contrato_by_id(contrato_id) is None:
+        return jsonify({'error': 'Contrato não encontrado'}), 404
+    
+    try:
+        
+        arquivos = arquivo_repo.find_arquivos_by_contrato_id(contrato_id)
+        return jsonify(arquivos), 200
+    except Exception as e:
+        return jsonify({'error': f'Erro ao buscar arquivos do contrato: {e}'}), 500
