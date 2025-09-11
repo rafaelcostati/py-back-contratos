@@ -128,9 +128,7 @@ def list_contract_files(contrato_id):
     """Lista todos os arquivos associados a um contrato."""
     if contrato_repo.find_contrato_by_id(contrato_id) is None:
         return jsonify({'error': 'Contrato não encontrado'}), 404
-    
     try:
-        
         arquivos = arquivo_repo.find_arquivos_by_contrato_id(contrato_id)
         return jsonify(arquivos), 200
     except Exception as e:
