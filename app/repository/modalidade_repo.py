@@ -31,3 +31,29 @@ def find_modalidade_by_id(modalidade_id):
     item = cursor.fetchone()
     cursor.close()
     return item
+
+def update_modalidade(modalidade_id, nome):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute("UPDATE modalidade SET nome = %s WHERE id = %s RETURNING *", (nome, modalidade_id))
+        updated_item = cursor.fetchone()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cursor.close()
+    return updated_item
+
+def delete_modalidade(modalidade_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM modalidade WHERE id = %s", (modalidade_id,))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cursor.close()

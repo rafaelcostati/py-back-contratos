@@ -1,10 +1,12 @@
 # app/routes/auth_routes.py
 from flask import Blueprint, request, jsonify
 from werkzeug.security import check_password_hash
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt
 from app.repository import usuario_repo, perfil_repo
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
+
+BLACKLIST = set()
 
 @bp.route('/login', methods=['POST'])
 def login():
@@ -40,3 +42,13 @@ def login():
             "perfil": perfil_nome
         }
     })
+
+@bp.route('/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    """
+    Adiciona o token atual a uma blacklist para invalidá-lo.
+    """
+    jti = get_jwt()['jti']
+    BLACKLIST.add(jti)
+    return jsonify({"msg": "Logout bem-sucedido"}), 200

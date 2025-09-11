@@ -31,3 +31,29 @@ def find_status_by_id(status_id):
     item = cursor.fetchone()
     cursor.close()
     return item
+
+def update_status(status_id, nome):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute("UPDATE status SET nome = %s WHERE id = %s RETURNING *", (nome, status_id))
+        updated_item = cursor.fetchone()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cursor.close()
+    return updated_item
+
+def delete_status(status_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM status WHERE id = %s", (status_id,))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cursor.close()
