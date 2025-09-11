@@ -1,4 +1,5 @@
 # app/routes/contrato_routes.py
+import math
 from flask import Blueprint, request, jsonify
 from app.email_utils import send_email
 from app.repository import contrato_repo, contratado_repo, modalidade_repo, relatorio_repo, status_repo, usuario_repo, arquivo_repo
@@ -33,7 +34,6 @@ def create():
     
     try:
         
-        # 1. Cria o contrato primeiro, sem a informação do documento
         new_contrato = contrato_repo.create_contrato(data)
         
         subject_gestor = "Você foi designado como Gestor de um novo contrato"
@@ -48,7 +48,6 @@ def create():
         """
         send_email(gestor['email'], subject_gestor, body_gestor)
 
-        # Notificar o Fiscal
         subject_fiscal = "Você foi designado como Fiscal de um novo contrato"
         body_fiscal = f"""
         Olá, {fiscal['nome']},
@@ -61,15 +60,12 @@ def create():
         """
         send_email(fiscal['email'], subject_fiscal, body_fiscal)
         
-        # 2. Verifica se há um arquivo para upload
         if 'documento_contrato' in request.files:
             file = request.files['documento_contrato']
             if file and file.filename != '':
                 from .relatorio_routes import _handle_file_upload
-                # 3. Faz o upload do arquivo usando o ID do contrato recém-criado
                 new_arquivo = _handle_file_upload(new_contrato['id'], file_key='documento_contrato')
                 
-                # 4. Atualiza o contrato com o ID do novo arquivo
                 update_data = {'documento': new_arquivo['id']}
                 new_contrato = contrato_repo.update_contrato(new_contrato['id'], update_data)
 
@@ -79,14 +75,60 @@ def create():
     except Exception as e:
         return jsonify({'error': f'Erro ao criar contrato: {e}'}), 500
 
-
 @bp.route('', methods=['GET'])
 @jwt_required()
 def list_all():
-    filters = { 'gestor_id': request.args.get('gestor_id'), 'fiscal_id': request.args.get('fiscal_id') }
+    filters = {
+        'gestor_id': request.args.get('gestor_id'),
+        'fiscal_id': request.args.get('fiscal_id'),
+        'objeto': request.args.get('objeto'),
+        'nr_contrato': request.args.get('nr_contrato'),
+        'status_id': request.args.get('status_id'),
+        'pae': request.args.get('pae'),
+        'ano': request.args.get('ano')
+    }
     active_filters = {k: v for k, v in filters.items() if v is not None}
-    contratos = contrato_repo.get_all_contratos(active_filters)
-    return jsonify(contratos), 200
+
+    sort_by = request.args.get('sortBy', 'data_fim')
+    order = request.args.get('order', 'desc').upper()
+
+    allowed_sort_fields = {'data_inicio', 'data_fim'}
+    if sort_by not in allowed_sort_fields:
+        sort_by = 'data_fim'
+
+    if order not in ['ASC', 'DESC']:
+        order = 'DESC'
+    
+    order_by_clause = f"c.{sort_by} {order}"
+    
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Parâmetros de paginação inválidos. Devem ser números inteiros.'}), 400
+
+    page = max(1, page)
+    per_page = max(1, per_page)
+    offset = (page - 1) * per_page
+    
+    contratos, total_items = contrato_repo.get_all_contratos(
+        filters=active_filters,
+        order_by=order_by_clause,
+        limit=per_page,
+        offset=offset
+    )
+    
+    total_pages = math.ceil(total_items / per_page) if total_items > 0 else 1
+
+    return jsonify({
+        'data': contratos,
+        'pagination': {
+            'total_items': total_items,
+            'total_pages': total_pages,
+            'current_page': page,
+            'per_page': per_page
+        }
+    }), 200
 
 @bp.route('/<int:id>', methods=['GET'])
 @jwt_required()
@@ -95,10 +137,7 @@ def get_by_id(id):
     if not contrato:
         return jsonify({'error': 'Contrato não encontrado'}), 404
     
-    # Busca os relatórios fiscais associados a este contrato
     relatorios = relatorio_repo.get_relatorios_by_contrato_id(id)
-    
-    # Adiciona a lista de relatórios ao objeto do contrato
     contrato['relatorios_fiscais'] = relatorios
     
     return jsonify(contrato), 200
@@ -128,6 +167,7 @@ def list_contract_files(contrato_id):
     """Lista todos os arquivos associados a um contrato."""
     if contrato_repo.find_contrato_by_id(contrato_id) is None:
         return jsonify({'error': 'Contrato não encontrado'}), 404
+    
     try:
         arquivos = arquivo_repo.find_arquivos_by_contrato_id(contrato_id)
         return jsonify(arquivos), 200

@@ -6,7 +6,6 @@ def create_contrato(data):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    # Lista de todos os campos esperados no banco de dados
     fields = [
         'nr_contrato', 'objeto', 'valor_anual', 'valor_global', 'base_legal',
         'data_inicio', 'data_fim', 'termos_contratuais', 'contratado_id',
@@ -14,7 +13,6 @@ def create_contrato(data):
         'fiscal_substituto_id', 'pae', 'doe', 'data_doe', 'documento'
     ]
     
-    # Monta a query dinamicamente para evitar erros de campos faltando
     query_fields = []
     query_values_placeholder = []
     query_values = []
@@ -42,45 +40,70 @@ def create_contrato(data):
         cursor.close()
     return new_contrato
 
-def get_all_contratos(filters=None):
+def get_all_contratos(filters=None, order_by='c.data_fim DESC', limit=10, offset=0):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-    base_sql = """
-        SELECT
-            c.id, c.nr_contrato, c.objeto, c.data_inicio, c.data_fim,
-            ct.nome as contratado_nome, m.nome as modalidade_nome, s.nome as status_nome
+    base_query = """
         FROM contrato c
         LEFT JOIN contratado ct ON c.contratado_id = ct.id
         LEFT JOIN modalidade m ON c.modalidade_id = m.id
         LEFT JOIN status s ON c.status_id = s.id
     """
-
+    
     where_clauses = ["c.ativo = TRUE"]
     params = []
 
     if filters:
-        if 'gestor_id' in filters:
+        if filters.get('gestor_id'):
             where_clauses.append("c.gestor_id = %s")
             params.append(filters['gestor_id'])
-        if 'fiscal_id' in filters:
+        if filters.get('fiscal_id'):
             where_clauses.append("c.fiscal_id = %s")
             params.append(filters['fiscal_id'])
-        
-        if 'contratado_id' in filters:
+        if filters.get('contratado_id'):
             where_clauses.append("c.contratado_id = %s")
             params.append(filters['contratado_id'])
+        if filters.get('objeto'):
+            where_clauses.append("c.objeto ILIKE %s")
+            params.append(f"%{filters['objeto']}%")
+        if filters.get('nr_contrato'):
+            where_clauses.append("c.nr_contrato ILIKE %s")
+            params.append(f"%{filters['nr_contrato']}%")
+        if filters.get('status_id'):
+            where_clauses.append("c.status_id = %s")
+            params.append(filters['status_id'])
+        if filters.get('pae'):
+            where_clauses.append("c.pae ILIKE %s")
+            params.append(f"%{filters['pae']}%")
         
+        if filters.get('ano'):
+            where_clauses.append("EXTRACT(YEAR FROM c.data_inicio) = %s")
+            params.append(filters['ano'])
 
     if where_clauses:
-        base_sql += " WHERE " + " AND ".join(where_clauses)
+        base_query += " WHERE " + " AND ".join(where_clauses)
 
-    base_sql += " ORDER BY c.data_fim DESC"
+    count_sql = f"SELECT COUNT(c.id) AS total {base_query}"
+    cursor.execute(count_sql, tuple(params))
+    total_items = cursor.fetchone()['total']
 
-    cursor.execute(base_sql, tuple(params))
+    data_sql = f"""
+        SELECT
+            c.id, c.nr_contrato, c.objeto, c.data_inicio, c.data_fim, c.pae,
+            ct.nome as contratado_nome, m.nome as modalidade_nome, s.nome as status_nome
+        {base_query}
+        ORDER BY {order_by}
+        LIMIT %s OFFSET %s
+    """
+    paginated_params = tuple(params) + (limit, offset)
+    cursor.execute(data_sql, paginated_params)
     contratos = cursor.fetchall()
+    
     cursor.close()
-    return contratos
+
+    return contratos, total_items
+
 def find_contrato_by_id(contrato_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
