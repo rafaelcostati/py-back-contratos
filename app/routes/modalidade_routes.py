@@ -18,6 +18,7 @@ def create():
     except Exception as e:
         return jsonify({'error': f'Erro ao criar modalidade: {e}'}), 409
 
+
 @bp.route('', methods=['GET'])
 @jwt_required()
 def list_all():
@@ -46,7 +47,7 @@ def delete(id):
     if modalidade_repo.find_modalidade_by_id(id) is None:
         return jsonify({'error': 'Modalidade não encontrada'}), 404
 
-    contratos_associados = contrato_repo.get_all_contratos(filters={'modalidade_id': id})
+    contratos_associados, _ = contrato_repo.get_all_contratos(filters={'modalidade_id': id})
     if contratos_associados:
         return jsonify({
             'error': 'Esta modalidade não pode ser excluída pois está associada a um ou mais contratos.',

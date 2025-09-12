@@ -55,6 +55,7 @@ def get_all_contratos(filters=None, order_by='c.data_fim DESC', limit=10, offset
     params = []
 
     if filters:
+        
         if filters.get('gestor_id'):
             where_clauses.append("c.gestor_id = %s")
             params.append(filters['gestor_id'])
@@ -64,6 +65,9 @@ def get_all_contratos(filters=None, order_by='c.data_fim DESC', limit=10, offset
         if filters.get('contratado_id'):
             where_clauses.append("c.contratado_id = %s")
             params.append(filters['contratado_id'])
+        if filters.get('modalidade_id'):
+            where_clauses.append("c.modalidade_id = %s")
+            params.append(filters['modalidade_id'])
         if filters.get('objeto'):
             where_clauses.append("c.objeto ILIKE %s")
             params.append(f"%{filters['objeto']}%")

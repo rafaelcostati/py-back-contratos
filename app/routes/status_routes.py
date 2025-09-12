@@ -46,7 +46,7 @@ def delete(id):
     if status_repo.find_status_by_id(id) is None:
         return jsonify({'error': 'Status não encontrado'}), 404
 
-    contratos_associados = contrato_repo.get_all_contratos(filters={'status_id': id})
+    contratos_associados, _ = contrato_repo.get_all_contratos(filters={'status_id': id})
     if contratos_associados:
         return jsonify({
             'error': 'Este status não pode ser excluído pois está associado a um ou mais contratos.',
