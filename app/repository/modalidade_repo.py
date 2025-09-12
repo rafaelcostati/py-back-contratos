@@ -19,7 +19,7 @@ def create_modalidade(nome):
 def get_all_modalidades():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT * FROM modalidade ORDER BY nome")
+    cursor.execute("SELECT * FROM modalidade WHERE ativo = TRUE ORDER BY nome")
     items = cursor.fetchall()
     cursor.close()
     return items
@@ -27,7 +27,7 @@ def get_all_modalidades():
 def find_modalidade_by_id(modalidade_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT * FROM modalidade WHERE id = %s", (modalidade_id,))
+    cursor.execute("SELECT * FROM modalidade WHERE id = %s AND ativo = TRUE", (modalidade_id,))
     item = cursor.fetchone()
     cursor.close()
     return item
@@ -49,8 +49,9 @@ def update_modalidade(modalidade_id, nome):
 def delete_modalidade(modalidade_id):
     conn = get_db_connection()
     cursor = conn.cursor()
+    sql = "UPDATE modalidade SET ativo = FALSE WHERE id = %s"
     try:
-        cursor.execute("DELETE FROM modalidade WHERE id = %s", (modalidade_id,))
+        cursor.execute(sql, (modalidade_id,))
         conn.commit()
     except Exception as e:
         conn.rollback()

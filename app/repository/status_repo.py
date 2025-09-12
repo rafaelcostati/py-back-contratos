@@ -19,7 +19,7 @@ def create_status(nome):
 def get_all_status():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT * FROM status ORDER BY nome")
+    cursor.execute("SELECT * FROM status WHERE ativo = TRUE ORDER BY nome")
     items = cursor.fetchall()
     cursor.close()
     return items
@@ -27,7 +27,7 @@ def get_all_status():
 def find_status_by_id(status_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT * FROM status WHERE id = %s", (status_id,))
+    cursor.execute("SELECT * FROM status WHERE id = %s AND ativo = TRUE", (status_id,))
     item = cursor.fetchone()
     cursor.close()
     return item
@@ -49,8 +49,9 @@ def update_status(status_id, nome):
 def delete_status(status_id):
     conn = get_db_connection()
     cursor = conn.cursor()
+    sql = "UPDATE status SET ativo = FALSE WHERE id = %s"
     try:
-        cursor.execute("DELETE FROM status WHERE id = %s", (status_id,))
+        cursor.execute(sql, (status_id,))
         conn.commit()
     except Exception as e:
         conn.rollback()
