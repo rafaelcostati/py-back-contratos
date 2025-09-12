@@ -12,6 +12,39 @@ ALTER TABLE contrato ADD COLUMN ativo BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE contratado ADD COLUMN ativo BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE contrato ALTER COLUMN documento TYPE integer USING documento::integer;
 
+-- Correção para a tabela: modalidade
+ALTER TABLE modalidade DROP CONSTRAINT modalidade_nome_key;
+CREATE UNIQUE INDEX idx_unique_modalidade_nome_ativo ON modalidade (nome) WHERE ativo IS TRUE;
+
+-- Correção para a tabela: status
+ALTER TABLE status DROP CONSTRAINT status_nome_key;
+CREATE UNIQUE INDEX idx_unique_status_nome_ativo ON status (nome) WHERE ativo IS TRUE;
+
+-- Correção para a tabela: perfil
+ALTER TABLE perfil DROP CONSTRAINT perfil_nome_key;
+CREATE UNIQUE INDEX idx_unique_perfil_nome_ativo ON perfil (nome) WHERE ativo IS TRUE;
+
+-- Correção para a tabela: contratado (para campos que devem ser únicos quando ativos)
+ALTER TABLE contratado DROP CONSTRAINT contratado_cnpj_key;
+ALTER TABLE contratado DROP CONSTRAINT contratado_cpf_key;
+ALTER TABLE contratado DROP CONSTRAINT contratado_email_key;
+CREATE UNIQUE INDEX idx_unique_contratado_cnpj_ativo ON contratado (cnpj) WHERE ativo IS TRUE;
+CREATE UNIQUE INDEX idx_unique_contratado_cpf_ativo ON contratado (cpf) WHERE ativo IS TRUE;
+CREATE UNIQUE INDEX idx_unique_contratado_email_ativo ON contratado (email) WHERE ativo IS TRUE;
+
+-- Correção para a tabela: usuario (para campos que devem ser únicos quando ativos)
+ALTER TABLE usuario DROP CONSTRAINT usuario_email_key;
+ALTER TABLE usuario DROP CONSTRAINT usuario_cpf_key;
+ALTER TABLE usuario DROP CONSTRAINT usuario_matricula_key;
+CREATE UNIQUE INDEX idx_unique_usuario_email_ativo ON usuario (email) WHERE ativo IS TRUE;
+CREATE UNIQUE INDEX idx_unique_usuario_cpf_ativo ON usuario (cpf) WHERE ativo IS TRUE;
+CREATE UNIQUE INDEX idx_unique_usuario_matricula_key ON usuario (matricula) WHERE ativo IS TRUE;
+
+-- Correção para a tabela: contrato
+ALTER TABLE contrato DROP CONSTRAINT contrato_nr_contrato_key;
+CREATE UNIQUE INDEX idx_unique_contrato_nr_contrato_ativo ON contrato (nr_contrato) WHERE ativo IS TRUE;
+
+
 
 flask seed-db para popular o banco de dados com dados iniciais
 
