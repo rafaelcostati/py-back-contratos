@@ -22,7 +22,7 @@ def create_contratado(nome, email, cnpj, cpf, telefone):
         cursor.close()
     return new_contratado
 
-def get_all_contratados(filters=None): # Alteramos a assinatura da função
+def get_all_contratados(filters=None):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     sql = "SELECT * FROM contratado WHERE ativo = TRUE"

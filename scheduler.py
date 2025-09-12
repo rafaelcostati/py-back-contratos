@@ -53,7 +53,7 @@ def check_deadlines():
                 elif dias_restantes == 0:
                     prazo_str = f"expira HOJE ({prazo.strftime('%d/%m/%Y')})."
                 else:
-                    # Não envia email para prazos já vencidos, mas você pode adicionar essa lógica se quiser
+                    # Não envia email para prazos já vencidos.
                     continue
 
                 body = f"""

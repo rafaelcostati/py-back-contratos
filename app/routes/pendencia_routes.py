@@ -5,9 +5,7 @@ from app.repository import pendencia_repo, contrato_repo, usuario_repo, status_p
 from flask_jwt_extended import jwt_required
 from app.auth_decorators import admin_required
 
-# O prefixo continua o mesmo
 bp = Blueprint('pendencias', __name__, url_prefix='/contratos/<int:contrato_id>/pendencias')
-
 
 @bp.route('', methods=['POST'])
 @admin_required()
@@ -34,7 +32,7 @@ def create(contrato_id):
     try:
         new_pendencia = pendencia_repo.create_pendencia(contrato_id, data)
         
-        # --- INÍCIO DA IMPLEMENTAÇÃO DO EMAIL ---
+        # --- IMPLEMENTAÇÃO DO EMAIL ---
         fiscal = usuario_repo.find_user_by_id(contrato['fiscal_id'])
         if fiscal:
             subject = "Nova pendência de relatório registrada para você"
@@ -49,11 +47,10 @@ def create(contrato_id):
             Por favor, acesse o sistema para submeter o relatório.
             """
             send_email(fiscal['email'], subject, body)
-        # --- FIM DA IMPLEMENTAÇÃO DO EMAIL ---
+        # --- IMPLEMENTAÇÃO DO EMAIL ---
         return jsonify(new_pendencia), 201
     except Exception as e:
         return jsonify({'error': f'Erro ao criar pendência: {e}'}), 500
-
 
 @bp.route('', methods=['GET'])
 @jwt_required()

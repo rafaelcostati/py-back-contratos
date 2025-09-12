@@ -35,12 +35,10 @@ def delete_file(arquivo_id):
     """Deleta um arquivo específico do sistema."""
     try:
         arquivo_repo.delete_arquivo(arquivo_id)
-        # Retorna uma resposta vazia com status 204 (No Content) em caso de sucesso
         return '', 204
     except FileNotFoundError:
         return jsonify({'error': 'Arquivo não encontrado.'}), 404
     except ValueError as ve:
-        # Retorna 409 (Conflict) se a exclusão violar uma regra de negócio
         return jsonify({'error': str(ve)}), 409
     except Exception as e:
         current_app.logger.error(f"Erro ao deletar arquivo ID {arquivo_id}: {e}")

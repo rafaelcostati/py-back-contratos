@@ -23,7 +23,6 @@ def create():
         new_contratado = contratado_repo.create_contratado(nome, email, cnpj, cpf, telefone)
         return jsonify(new_contratado), 201
     except Exception as e:
-        # Tratamento de erro para CNPJ/CPF/Email duplicados
         return jsonify({'error': f'Erro ao criar contratado: {e}'}), 409
 
 @bp.route('', methods=['GET'])
@@ -33,9 +32,7 @@ def list_all():
     nome_query = request.args.get('nome')
     if nome_query:
         filters['nome'] = nome_query
-    
     contratados = contratado_repo.get_all_contratados(filters)
-
     return jsonify(contratados), 200
 
 @bp.route('/<int:id>', methods=['GET'])
@@ -74,7 +71,6 @@ def delete(id):
             'error': 'Este contratado não pode ser excluído pois está associado a um ou mais contratos.',
             'contratos': [{'id': c['id'], 'nr_contrato': c['nr_contrato']} for c in contratos_associados]
         }), 409 
-    
 
     contratado_repo.delete_contratado(id)
     return '', 204

@@ -1,5 +1,5 @@
 # app/repository/arquivo_repo.py
-import os # Adicionado para manipulação de arquivos
+import os 
 from psycopg2.extras import RealDictCursor
 from app.db import get_db_connection
 
@@ -32,7 +32,6 @@ def find_arquivo_by_id(arquivo_id):
     cursor.close()
     return arquivo
 
-# Função adicionada na resposta anterior
 def find_arquivos_by_contrato_id(contrato_id):
     """Busca todos os arquivos associados a um contrato pelo ID do contrato."""
     conn = get_db_connection()
@@ -59,11 +58,9 @@ def delete_arquivo(arquivo_id):
             return
 
         # 2. Desvincula o arquivo de qualquer relatório fiscal que o utilize
-        # Em vez de bloquear, define o campo 'arquivo_id' como NULL
         cursor.execute("UPDATE relatoriofiscal SET arquivo_id = NULL WHERE arquivo_id = %s", (arquivo_id,))
 
         # 3. Desvincula o arquivo de qualquer contrato que o utilize como documento principal
-        # Em vez de bloquear, define o campo 'documento' como NULL
         cursor.execute("UPDATE contrato SET documento = NULL WHERE documento = %s", (arquivo_id,))
        
         # 4. Deleta o registro do arquivo da tabela 'arquivo'

@@ -17,23 +17,17 @@ def login():
     email = data['email']
     senha = data['senha']
 
-    # Busca o usuário pelo email, incluindo a senha
     usuario = usuario_repo.find_user_by_email_for_auth(email)
 
-    # Verifica se o usuário existe e se a senha está correta
     if not usuario or not check_password_hash(usuario['senha'], senha):
         return jsonify({"error": "Credenciais inválidas"}), 401
 
-    # Busca o nome do perfil para incluir no token e na resposta
     perfil = perfil_repo.find_perfil_by_id(usuario['perfil_id'])
     perfil_nome = perfil['nome'] if perfil else 'Desconhecido'
-    
-    # Cria o payload (carga útil) do token com informações adicionais
+
     additional_claims = {"perfil": perfil_nome}
     access_token = create_access_token(identity=str(usuario['id']), additional_claims=additional_claims)
 
-    
-    # Retorna o token e os dados do usuário
     return jsonify({
         "token": access_token,
         "usuario": {
