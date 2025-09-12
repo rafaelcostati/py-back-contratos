@@ -10,25 +10,32 @@ bp = Blueprint('arquivos', __name__, url_prefix='/arquivos')
 @bp.route('/<int:arquivo_id>/download')
 @jwt_required()
 def download_file(arquivo_id):
-    """Serve um arquivo para visualização/download."""
+    """Serve um arquivo para visualização/download com seu nome original."""
     try:
         arquivo = arquivo_repo.find_arquivo_by_id(arquivo_id)
         if not arquivo or not arquivo.get('path_armazenamento'):
-            abort(404, description="Arquivo não encontrado.")
+            abort(404, description="Arquivo não encontrado no banco de dados.")
 
-        directory = os.path.dirname(arquivo['path_armazenamento'])
-        filename = os.path.basename(arquivo['path_armazenamento'])
+        path_completo = arquivo['path_armazenamento']
+        nome_original = arquivo['nome_arquivo']
+        
+        directory = os.path.dirname(path_completo)
+        filename_com_hash = os.path.basename(path_completo)
 
-        if not os.path.exists(os.path.join(directory, filename)):
+        if not os.path.exists(path_completo):
             abort(404, description="Arquivo físico não encontrado no servidor.")
 
-        return send_from_directory(directory, filename, as_attachment=True)
+        return send_from_directory(
+            directory, 
+            filename_com_hash, 
+            as_attachment=True, 
+            download_name=nome_original 
+        )
 
     except Exception as e:
         current_app.logger.error(f"Erro ao servir arquivo ID {arquivo_id}: {e}")
         abort(500, description="Erro interno ao acessar o arquivo.")
 
-# NOVA ROTA
 @bp.route('/<int:arquivo_id>', methods=['DELETE'])
 @admin_required()
 def delete_file(arquivo_id):

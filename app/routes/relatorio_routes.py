@@ -1,51 +1,44 @@
 # app/routes/relatorio_routes.py
 import os
+import secrets 
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
 from app.repository import relatorio_repo, arquivo_repo, contrato_repo, status_pendencia_repo, usuario_repo, status_relatorio_repo, pendencia_repo
 from flask_jwt_extended import jwt_required
 from app.auth_decorators import admin_required, fiscal_required
 from app.email_utils import send_email
-from app.repository import status_relatorio_repo
 
 bp = Blueprint('relatorios', __name__, url_prefix='/contratos/<int:contrato_id>/relatorios')
 
 ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'odt', 'ods'}
+
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def _handle_file_upload(contrato_id, file_key):
-    """Função auxiliar interna para lidar com o processo de upload de arquivo."""
-    if file_key not in request.files:
-        raise ValueError(f"Nenhum arquivo encontrado com a chave '{file_key}'")
-        
-    file = request.files[file_key]
+def _handle_file_upload(contrato_id, file):
     if file.filename == '':
         raise ValueError("Nome do arquivo não pode ser vazio")
 
     if not allowed_file(file.filename):
-        raise ValueError("Tipo de arquivo não permitido")
+        raise ValueError(f"Tipo de arquivo não permitido: {file.filename.rsplit('.', 1)[1].lower()}")
 
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+    contrato_upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], str(contrato_id))
+    os.makedirs(contrato_upload_folder, exist_ok=True)
+    original_filename = secure_filename(file.filename)
+    name, ext = os.path.splitext(original_filename)
+    file_hash = secrets.token_hex(3) 
+    unique_filename = f"{name}_{file_hash}{ext}"
+    
+    filepath = os.path.join(contrato_upload_folder, unique_filename)
     
     file.save(filepath)
-    file_size = os.path.getsize(filepath)
-
-    new_arquivo = arquivo_repo.create_arquivo(
-        nome_arquivo=filename,
-        path_armazenamento=filepath,
-        tipo_arquivo=file.mimetype,
-        tamanho_bytes=file_size,
-        contrato_id=contrato_id
-    )
-    return new_arquivo
+    
+    return original_filename, filepath
 
 @bp.route('', methods=['POST'])
 @fiscal_required()
 def submit_relatorio(contrato_id):
-    """Endpoint para um fiscal submeter um relatório EM RESPOSTA A UMA PENDÊNCIA."""
     if contrato_repo.find_contrato_by_id(contrato_id) is None:
         return jsonify({'error': 'Contrato não encontrado'}), 404
         
@@ -58,30 +51,37 @@ def submit_relatorio(contrato_id):
     if not all(field in form_data for field in required_fields):
         return jsonify({'error': f'Campos de formulário obrigatórios: {required_fields}'}), 400
 
+    if 'arquivo' not in request.files:
+         return jsonify({'error': "Nenhum arquivo encontrado com a chave 'arquivo'"}), 400
+
+    file = request.files['arquivo']
     filepath = None
     try:
-        
         status_relatorio_pendente = status_relatorio_repo.find_statusrelatorio_by_name('Pendente de Análise')
         status_pendencia_concluida = status_pendencia_repo.find_statuspendencia_by_name('Concluída')
         
         if not status_relatorio_pendente or not status_pendencia_concluida:
             return jsonify({'error': 'Status padrão ("Pendente de Análise", "Concluída") não encontrados no banco. Execute o seeder.'}), 500
 
-        new_arquivo = _handle_file_upload(contrato_id, file_key='arquivo')
-        filepath = new_arquivo['path_armazenamento']
+        
+        original_filename, filepath = _handle_file_upload(contrato_id, file)
+        file_size = os.path.getsize(filepath)
+
+        new_arquivo = arquivo_repo.create_arquivo(
+            nome_arquivo=original_filename, 
+            path_armazenamento=filepath,   
+            tipo_arquivo=file.mimetype,
+            tamanho_bytes=file_size,
+            contrato_id=contrato_id
+        )
 
         relatorio_data = {
-            'contrato_id': contrato_id,
-            'arquivo_id': new_arquivo['id'],
-            'fiscal_usuario_id': form_data['fiscal_usuario_id'],
-            'mes_competencia': form_data['mes_competencia'],
-            'observacoes_fiscal': form_data.get('observacoes_fiscal'),
-            'pendencia_id': form_data.get('pendencia_id'),
-            'status_id': status_relatorio_pendente['id']
+            'contrato_id': contrato_id, 'arquivo_id': new_arquivo['id'], 'fiscal_usuario_id': form_data['fiscal_usuario_id'],
+            'mes_competencia': form_data['mes_competencia'], 'observacoes_fiscal': form_data.get('observacoes_fiscal'),
+            'pendencia_id': form_data.get('pendencia_id'), 'status_id': status_relatorio_pendente['id']
         }
         
         new_relatorio = relatorio_repo.create_relatorio(relatorio_data)
-
         pendencia_repo.update_pendencia_status(relatorio_data['pendencia_id'], status_pendencia_concluida['id'])
 
         return jsonify(new_relatorio), 201
@@ -92,6 +92,47 @@ def submit_relatorio(contrato_id):
         if filepath and os.path.exists(filepath):
             os.remove(filepath)
         return jsonify({'error': f'Erro ao processar o relatório: {e}'}), 500
+
+@bp.route('/<int:relatorio_id>', methods=['PUT'])
+@fiscal_required()
+def reenviar_relatorio(contrato_id, relatorio_id):
+    if relatorio_repo.find_relatorio_by_id(relatorio_id) is None:
+        return jsonify({'error': 'Relatório a ser atualizado não encontrado'}), 404
+    
+    if 'arquivo' not in request.files:
+        return jsonify({'error': "Nenhum arquivo encontrado com a chave 'arquivo'"}), 400
+
+    file = request.files['arquivo']
+    observacoes_fiscal = request.form.get('observacoes_fiscal')
+    filepath = None
+    try:
+        
+        original_filename, filepath = _handle_file_upload(contrato_id, file)
+        file_size = os.path.getsize(filepath)
+
+        new_arquivo = arquivo_repo.create_arquivo(
+            nome_arquivo=original_filename,
+            path_armazenamento=filepath,
+            tipo_arquivo=file.mimetype,
+            tamanho_bytes=file_size,
+            contrato_id=contrato_id
+        )
+
+        updated_relatorio = relatorio_repo.update_relatorio_reenvio(
+            relatorio_id, 
+            new_arquivo['id'], 
+            observacoes_fiscal
+        )
+
+        return jsonify(updated_relatorio), 200
+
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
+    except Exception as e:
+        if filepath and os.path.exists(filepath):
+            os.remove(filepath)
+        return jsonify({'error': f'Erro ao reenviar o relatório: {e}'}), 500
+
 
 @bp.route('/<int:relatorio_id>/analise', methods=['PATCH'])
 @admin_required()
@@ -139,35 +180,6 @@ def analisar_relatorio(contrato_id, relatorio_id):
     except Exception as e:
         return jsonify({'error': f'Erro ao analisar relatório: {e}'}), 500
 
-@bp.route('/<int:relatorio_id>', methods=['PUT'])
-@fiscal_required()
-def reenviar_relatorio(contrato_id, relatorio_id):
-    """Endpoint para um Fiscal reenviar um relatório corrigido (com novo arquivo)."""
-    
-    if relatorio_repo.find_relatorio_by_id(relatorio_id) is None:
-        return jsonify({'error': 'Relatório a ser atualizado não encontrado'}), 404
-    
-    observacoes_fiscal = request.form.get('observacoes_fiscal')
-    filepath = None
-    try:
-        new_arquivo = _handle_file_upload(contrato_id, file_key='arquivo')
-        filepath = new_arquivo['path_armazenamento']
-
-        updated_relatorio = relatorio_repo.update_relatorio_reenvio(
-            relatorio_id, 
-            new_arquivo['id'], 
-            observacoes_fiscal
-        )
-
-        return jsonify(updated_relatorio), 200
-
-    except ValueError as ve:
-        return jsonify({'error': str(ve)}), 400
-    except Exception as e:
-        if filepath and os.path.exists(filepath):
-            os.remove(filepath)
-        return jsonify({'error': f'Erro ao reenviar o relatório: {e}'}), 500
-    
 @bp.route('', methods=['GET'])
 @jwt_required()
 def list_relatorios(contrato_id):

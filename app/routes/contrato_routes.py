@@ -2,11 +2,12 @@
 import math
 import os
 from flask import Blueprint, request, jsonify, current_app
-from werkzeug.utils import secure_filename
 from app.email_utils import send_email
 from app.repository import contrato_repo, contratado_repo, modalidade_repo, relatorio_repo, status_repo, usuario_repo, arquivo_repo
 from flask_jwt_extended import jwt_required
 from app.auth_decorators import admin_required
+
+from .relatorio_routes import _handle_file_upload 
 
 bp = Blueprint('contratos', __name__, url_prefix='/contratos')
 
@@ -15,6 +16,7 @@ bp = Blueprint('contratos', __name__, url_prefix='/contratos')
 def create():
     data = request.form.to_dict()
 
+    
     if not data:
         return jsonify({'error': 'Nenhum dado enviado'}), 400
 
@@ -35,6 +37,7 @@ def create():
     try:
         new_contrato = contrato_repo.create_contrato(data)
         
+       
         subject_gestor = "Você foi designado como Gestor de um novo contrato"
         body_gestor = f"""
         Olá, {gestor['nome']},
@@ -59,28 +62,26 @@ def create():
         """
         send_email(fiscal['email'], subject_fiscal, body_fiscal)
         
+        # ALTERADO: Lógica de upload simplificada
         if 'documentos_contrato' in request.files:
             files = request.files.getlist('documentos_contrato')
 
             for file in files:
-                if file and file.filename != '':
-                    from .relatorio_routes import allowed_file
-                    if not allowed_file(file.filename):
-                        current_app.logger.warning(f"Arquivo '{file.filename}' pulado devido a tipo não permitido.")
-                        continue
-
-                    filename = secure_filename(file.filename)
-                    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-                    file.save(filepath)
+                try:
+                    original_filename, filepath = _handle_file_upload(new_contrato['id'], file)
                     file_size = os.path.getsize(filepath)
 
                     arquivo_repo.create_arquivo(
-                        nome_arquivo=filename,
-                        path_armazenamento=filepath,
+                        nome_arquivo=original_filename, 
+                        path_armazenamento=filepath,    
                         tipo_arquivo=file.mimetype,
                         tamanho_bytes=file_size,
                         contrato_id=new_contrato['id']
                     )
+                except ValueError as ve:
+                   
+                    current_app.logger.warning(f"Arquivo '{file.filename}' pulado: {ve}")
+                    continue
 
         final_contrato = contrato_repo.find_contrato_by_id(new_contrato['id'])
         return jsonify(final_contrato), 201
@@ -88,7 +89,9 @@ def create():
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 400
     except Exception as e:
+
         return jsonify({'error': f'Erro ao criar contrato: {e}'}), 500
+
 
 @bp.route('', methods=['GET'])
 @jwt_required()
@@ -173,24 +176,20 @@ def update(id):
             files = request.files.getlist('documentos_contrato')
 
             for file in files:
-                if file and file.filename != '':
-                    from .relatorio_routes import allowed_file
-                    if not allowed_file(file.filename):
-                        current_app.logger.warning(f"Arquivo '{file.filename}' pulado devido a tipo não permitido.")
-                        continue
-                    
-                    filename = secure_filename(file.filename)
-                    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-                    file.save(filepath)
+                try:
+                    original_filename, filepath = _handle_file_upload(id, file) # Usa o ID do contrato existente
                     file_size = os.path.getsize(filepath)
 
                     arquivo_repo.create_arquivo(
-                        nome_arquivo=filename,
+                        nome_arquivo=original_filename,
                         path_armazenamento=filepath,
                         tipo_arquivo=file.mimetype,
                         tamanho_bytes=file_size,
                         contrato_id=id
                     )
+                except ValueError as ve:
+                    current_app.logger.warning(f"Arquivo '{file.filename}' pulado: {ve}")
+                    continue
         
         updated_contrato = contrato_repo.find_contrato_by_id(id)
         return jsonify(updated_contrato), 200
