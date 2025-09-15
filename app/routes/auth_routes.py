@@ -1,7 +1,7 @@
 # app/routes/auth_routes.py
 from flask import Blueprint, request, jsonify
 from werkzeug.security import check_password_hash
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt, get_jwt_identity
 from app.repository import usuario_repo, perfil_repo
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -40,9 +40,28 @@ def login():
 @bp.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
-    """
-    Adiciona o token atual a uma blacklist para invalidá-lo.
-    """
     jti = get_jwt()['jti']
     BLACKLIST.add(jti)
     return jsonify({"msg": "Logout bem-sucedido"}), 200
+
+@bp.route('/profile', methods=['GET'])
+@jwt_required()
+def profile():
+    current_user_id = get_jwt_identity()
+    usuario = usuario_repo.find_user_by_id(current_user_id)
+
+    if not usuario:
+        return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+    perfil = perfil_repo.find_perfil_by_id(usuario['perfil_id'])
+    perfil_nome = perfil['nome'] if perfil else 'Desconhecido'
+    
+    perfil_info = {
+        'id': usuario['id'],
+        'nome': usuario['nome'],
+        'email': usuario['email'],
+        'perfil': perfil_nome,
+        'ativo': True 
+    }
+
+    return jsonify(perfil_info), 200
