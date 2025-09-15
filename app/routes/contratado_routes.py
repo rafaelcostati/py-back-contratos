@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify
 from app.repository import contratado_repo, contrato_repo
 from flask_jwt_extended import jwt_required
 from app.auth_decorators import admin_required
+import math
 
 bp = Blueprint('contratados', __name__, url_prefix='/contratados')
 
@@ -32,8 +33,34 @@ def list_all():
     nome_query = request.args.get('nome')
     if nome_query:
         filters['nome'] = nome_query
-    contratados = contratado_repo.get_all_contratados(filters)
-    return jsonify(contratados), 200
+    
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Parâmetros de paginação inválidos. Devem ser números inteiros.'}), 400
+
+    page = max(1, page)
+    per_page = max(1, per_page)
+    offset = (page - 1) * per_page
+    
+    contratados, total_items = contratado_repo.get_all_contratados(
+        filters=filters,
+        limit=per_page,
+        offset=offset
+    )
+    
+    total_pages = math.ceil(total_items / per_page) if total_items > 0 else 1
+
+    return jsonify({
+        'data': contratados,
+        'pagination': {
+            'total_items': total_items,
+            'total_pages': total_pages,
+            'current_page': page,
+            'per_page': per_page
+        }
+    }), 200
 
 @bp.route('/<int:id>', methods=['GET'])
 @jwt_required()
@@ -65,8 +92,8 @@ def delete(id):
     if contratado_repo.find_contratado_by_id(id) is None:
         return jsonify({'error': 'Contratado não encontrado'}), 404
 
-    contratos_associados = contrato_repo.get_all_contratos(filters={'contratado_id': id})
-    if contratos_associados:
+    contratos_associados, total_items = contrato_repo.get_all_contratos(filters={'contratado_id': id})
+    if total_items > 0:
         return jsonify({
             'error': 'Este contratado não pode ser excluído pois está associado a um ou mais contratos.',
             'contratos': [{'id': c['id'], 'nr_contrato': c['nr_contrato']} for c in contratos_associados]

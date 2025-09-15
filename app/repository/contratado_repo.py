@@ -22,22 +22,28 @@ def create_contratado(nome, email, cnpj, cpf, telefone):
         cursor.close()
     return new_contratado
 
-def get_all_contratados(filters=None):
+def get_all_contratados(filters=None, limit=10, offset=0):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    sql = "SELECT * FROM contratado WHERE ativo = TRUE"
+    
+    base_query = "FROM contratado WHERE ativo = TRUE"
     params = []
 
     if filters and 'nome' in filters:
-        sql += " AND nome ILIKE %s"
+        base_query += " AND nome ILIKE %s"
         params.append(f"%{filters['nome']}%")
     
-    sql += " ORDER BY nome"
+    count_sql = f"SELECT COUNT(id) AS total {base_query}"
+    cursor.execute(count_sql, tuple(params))
+    total_items = cursor.fetchone()['total']
+
+    data_sql = f"SELECT * {base_query} ORDER BY nome LIMIT %s OFFSET %s"
     
-    cursor.execute(sql, params)
+    paginated_params = tuple(params) + (limit, offset)
+    cursor.execute(data_sql, paginated_params)
     contratados = cursor.fetchall()
     cursor.close()
-    return contratados
+    return contratados, total_items
 
 def find_contratado_by_id(contratado_id):
     conn = get_db_connection()

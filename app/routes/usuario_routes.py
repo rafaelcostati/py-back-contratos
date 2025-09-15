@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from app.repository import usuario_repo
 from flask_jwt_extended import jwt_required, get_jwt
 from app.auth_decorators import admin_required
+import math
 
 bp = Blueprint('usuarios', __name__, url_prefix='/usuarios')
 
@@ -27,15 +28,38 @@ def create():
 @bp.route('', methods=['GET'])
 @admin_required()
 def list_all():
-    
     filters = {}
     nome_query = request.args.get('nome')
     if nome_query:
         filters['nome'] = nome_query
         
-    users = usuario_repo.get_all_users(filters)
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Parâmetros de paginação inválidos. Devem ser números inteiros.'}), 400
+
+    page = max(1, page)
+    per_page = max(1, per_page)
+    offset = (page - 1) * per_page
     
-    return jsonify(users), 200
+    users, total_items = usuario_repo.get_all_users(
+        filters=filters,
+        limit=per_page,
+        offset=offset
+    )
+    
+    total_pages = math.ceil(total_items / per_page) if total_items > 0 else 1
+
+    return jsonify({
+        'data': users,
+        'pagination': {
+            'total_items': total_items,
+            'total_pages': total_pages,
+            'current_page': page,
+            'per_page': per_page
+        }
+    }), 200
 
 @bp.route('/<int:id>', methods=['GET'])
 @jwt_required()
