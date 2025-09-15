@@ -14,8 +14,13 @@ bp = Blueprint('contratos', __name__, url_prefix='/contratos')
 @bp.route('', methods=['POST'])
 @admin_required()
 def create():
-    data = request.form.to_dict()
-
+    # --- CORREÇÃO APLICADA AQUI ---
+    # Verifica se a requisição é JSON ou Multi-part Form
+    if request.is_json:
+        data = request.get_json()
+    else:
+        data = request.form.to_dict()
+    # --- FIM DA CORREÇÃO ---
     
     if not data:
         return jsonify({'error': 'Nenhum dado enviado'}), 400
@@ -62,7 +67,7 @@ def create():
         """
         send_email(fiscal['email'], subject_fiscal, body_fiscal)
         
-        # ALTERADO: Lógica de upload simplificada
+        # A lógica de upload continua a mesma, pois só será acionada por requisições form-data
         if 'documentos_contrato' in request.files:
             files = request.files.getlist('documentos_contrato')
 
@@ -166,7 +171,12 @@ def update(id):
     if contrato_repo.find_contrato_by_id(id) is None:
         return jsonify({'error': 'Contrato não encontrado'}), 404
 
-    data = request.form.to_dict()
+    # --- CORREÇÃO APLICADA AQUI ---
+    if request.is_json:
+        data = request.get_json()
+    else:
+        data = request.form.to_dict()
+    # --- FIM DA CORREÇÃO ---
     
     try:
         if data:

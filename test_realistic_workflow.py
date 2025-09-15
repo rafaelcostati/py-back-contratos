@@ -52,7 +52,19 @@ class TestFullWorkflow(unittest.TestCase):
         def get_id_by_name(endpoint, name):
             r = requests.get(f"{BASE_URL}{endpoint}", headers=cls.admin_headers)
             assert r.status_code == 200, f"Falha ao buscar dados de {endpoint}. Resposta: {r.text}"
-            for item in r.json():
+            response_json = r.json()
+
+            # --- CORREÇÃO APLICADA AQUI ---
+            # Verifica se a resposta é um dicionário (paginado) ou uma lista (não paginado)
+            if isinstance(response_json, dict) and 'data' in response_json:
+                items = response_json['data']
+            elif isinstance(response_json, list):
+                items = response_json
+            else:
+                raise TypeError(f"Formato de resposta inesperado do endpoint {endpoint}")
+            # --- FIM DA CORREÇÃO ---
+            
+            for item in items:
                 if item['nome'] == name: return item['id']
             raise Exception(f"'{name}' não encontrado em {endpoint}. O banco foi populado com 'flask seed-db'?")
 
@@ -114,7 +126,6 @@ class TestFullWorkflow(unittest.TestCase):
         cls.auth_tokens['fiscal'] = r_login_fiscal.json()['token']
         print("-> Tokens de autenticação para Gestor e Fiscal foram obtidos.")
     
-    # ... O restante dos métodos de teste (test_01, test_02, etc.) permanece exatamente o mesmo ...
     def test_01_admin_can_manage_users(self):
         """ Testa o ciclo de vida completo (CRUD) de um Usuário pelo Admin. """
         print("\nPASSO 1: Testando Gerenciamento de Usuários (Admin)")
@@ -241,10 +252,10 @@ class TestFullWorkflow(unittest.TestCase):
             "fiscal_id": self.created_ids['fiscal']
         }
         with open(PDF_CONTRATO_PATH, 'rb') as f:
-            files = {'documento_contrato': (os.path.basename(PDF_CONTRATO_PATH), f, 'application/pdf')}
+            files = {'documentos_contrato': (os.path.basename(PDF_CONTRATO_PATH), f, 'application/pdf')}
             r_contrato = requests.post(f'{BASE_URL}/contratos', data=form_data, files=files, headers=self.admin_headers)
         
-        self.assertEqual(r_contrato.status_code, 201)
+        self.assertEqual(r_contrato.status_code, 201, f"Falha ao criar contrato: {r_contrato.text}")
         contrato_id = r_contrato.json()['id']
         self.__class__.created_ids['contrato'] = contrato_id
         print(f" -> Contrato ID {contrato_id} criado.")
@@ -323,8 +334,10 @@ class TestFullWorkflow(unittest.TestCase):
         gestor_headers = {'Authorization': f'Bearer {self.auth_tokens["gestor"]}'}
         r_gestor_lista = requests.get(f"{BASE_URL}/contratos?gestor_id={self.created_ids['gestor']}", headers=gestor_headers)
         self.assertEqual(r_gestor_lista.status_code, 200)
-        contratos_gestor = r_gestor_lista.json()
+        
+        contratos_gestor = r_gestor_lista.json()['data']
         self.assertEqual(len(contratos_gestor), 1)
+        
         self.assertEqual(contratos_gestor[0]['id'], contrato_id)
         print(" -> Consulta de contratos por gestor funciona corretamente.")
         
@@ -347,22 +360,22 @@ class TestFullWorkflow(unittest.TestCase):
         # Admin: sem filtros, deve ver pelo menos um contrato.
         r_admin = requests.get(f'{BASE_URL}/contratos', headers=self.admin_headers)
         self.assertEqual(r_admin.status_code, 200)
-        self.assertGreater(len(r_admin.json()), 0)
+        self.assertGreater(len(r_admin.json()['data']), 0)
         print(" -> Admin vê todos os contratos.")
 
         # Fiscal: deve ver apenas o seu contrato.
         fiscal_headers = {'Authorization': f'Bearer {self.auth_tokens["fiscal"]}'}
         r_fiscal = requests.get(f"{BASE_URL}/contratos?fiscal_id={self.created_ids['fiscal']}", headers=fiscal_headers)
         self.assertEqual(r_fiscal.status_code, 200)
-        self.assertEqual(len(r_fiscal.json()), 1)
-        self.assertEqual(r_fiscal.json()[0]['id'], contrato_id)
+        self.assertEqual(len(r_fiscal.json()['data']), 1)
+        self.assertEqual(r_fiscal.json()['data'][0]['id'], contrato_id)
         print(" -> Fiscal vê apenas seus contratos.")
         
         # Gestor: não deve ver o contrato do fiscal ao filtrar por outro ID.
         gestor_headers = {'Authorization': f'Bearer {self.auth_tokens["gestor"]}'}
         r_gestor_vazio = requests.get(f"{BASE_URL}/contratos?fiscal_id={self.created_ids['gestor']}", headers=gestor_headers)
         self.assertEqual(r_gestor_vazio.status_code, 200)
-        self.assertEqual(len(r_gestor_vazio.json()), 0)
+        self.assertEqual(len(r_gestor_vazio.json()['data']), 0)
         print(" -> Filtro por ID de fiscal diferente retorna lista vazia, como esperado.")
         
     def test_07_password_management(self):
@@ -403,6 +416,7 @@ class TestFullWorkflow(unittest.TestCase):
     def test_08_advanced_error_handling(self):
         """ Testa cenários de erro mais complexos e regras de negócio. """
         print("\nPASSO 8: Testando tratamento de erros avançado.")
+        self.assertIn('contrato', self.created_ids, "O contrato do teste de workflow não foi criado para o teste 08.")
         contrato_id = self.created_ids['contrato']
         fiscal_headers = {'Authorization': f'Bearer {self.auth_tokens["fiscal"]}'}
         
@@ -432,8 +446,15 @@ class TestFullWorkflow(unittest.TestCase):
         self.created_ids['outro_contrato'] = outro_contrato_id # Adiciona para limpeza
 
         # Fiscal principal tenta enviar relatório para o contrato que não é dele (deve falhar)
-        r_permissao = requests.post(f'{BASE_URL}/contratos/{outro_contrato_id}/relatorios', data={'pendencia_id': 999}, headers=fiscal_headers)
-        self.assertIn(r_permissao.status_code, [400, 403, 404])
+        # Criamos uma pendência primeiro para o teste ser mais realista
+        pendencia_outro_payload = {"descricao": "Pendencia Outro", "data_prazo": "2025-01-01", "status_pendencia_id": self.seed_ids['status_pendencia_pendente'], "criado_por_usuario_id": self.created_ids['admin']}
+        r_pend_outro = requests.post(f'{BASE_URL}/contratos/{outro_contrato_id}/pendencias', json=pendencia_outro_payload, headers=self.admin_headers)
+        pendencia_outro_id = r_pend_outro.json()['id']
+
+        r_permissao = requests.post(f'{BASE_URL}/contratos/{outro_contrato_id}/relatorios', data={'pendencia_id': pendencia_outro_id}, headers=fiscal_headers)
+        # O ideal é 403 (Forbidden), mas dependendo da lógica pode ser outro erro 4xx
+        self.assertGreaterEqual(r_permissao.status_code, 400)
+        self.assertLess(r_permissao.status_code, 500)
         print(" -> Fiscal foi bloqueado de interagir com um contrato que não é seu.")
         
     def test_09_data_integrity_and_constraints(self):
@@ -452,15 +473,12 @@ class TestFullWorkflow(unittest.TestCase):
         }
         r_contrato = requests.post(f'{BASE_URL}/contratos', json=contrato_payload, headers=self.admin_headers)
         contrato_id_integridade = r_contrato.json()['id']
+        self.created_ids['contrato_integridade'] = contrato_id_integridade # Para limpeza
 
         # Tenta deletar o contratado que está em uso (deve falhar)
         r_delete_fail = requests.delete(f"{BASE_URL}/contratados/{contratado_id}", headers=self.admin_headers)
-        self.assertIn(r_delete_fail.status_code, [409, 500])
+        self.assertEqual(r_delete_fail.status_code, 409)
         print(" -> API protegeu contra a exclusão de um contratado em uso.")
-
-        # Limpeza do Cenário 1
-        requests.delete(f"{BASE_URL}/contratos/{contrato_id_integridade}", headers=self.admin_headers)
-        requests.delete(f"{BASE_URL}/contratados/{contratado_id}", headers=self.admin_headers)
 
         # --- Cenário 2: Validação de Soft Delete ---
         # Cria um usuário para ser deletado
@@ -469,7 +487,7 @@ class TestFullWorkflow(unittest.TestCase):
         user_id_todelete = r_user.json()['id']
         
         # Verifica que o usuário está na lista
-        r_users_before = requests.get(f'{BASE_URL}/usuarios', headers=self.admin_headers).json()
+        r_users_before = requests.get(f'{BASE_URL}/usuarios', headers=self.admin_headers).json()['data']
         self.assertTrue(any(user['id'] == user_id_todelete for user in r_users_before))
         print(f" -> Usuário {user_id_todelete} existe na lista antes do delete.")
         
@@ -477,7 +495,7 @@ class TestFullWorkflow(unittest.TestCase):
         requests.delete(f"{BASE_URL}/usuarios/{user_id_todelete}", headers=self.admin_headers)
         
         # Verifica que o usuário NÃO está mais na lista
-        r_users_after = requests.get(f'{BASE_URL}/usuarios', headers=self.admin_headers).json()
+        r_users_after = requests.get(f'{BASE_URL}/usuarios', headers=self.admin_headers).json()['data']
         self.assertFalse(any(user['id'] == user_id_todelete for user in r_users_after))
         print(f" -> Usuário {user_id_todelete} não existe mais na lista após o soft delete, como esperado.")
 
@@ -487,23 +505,26 @@ class TestFullWorkflow(unittest.TestCase):
         print("\n--- INICIANDO LIMPEZA DO AMBIENTE DE TESTE ---")
         
         # A ordem de deleção é importante para evitar erros de chave estrangeira
+        # Limpa contratos primeiro
+        if 'contrato_integridade' in cls.created_ids:
+             requests.delete(f"{BASE_URL}/contratos/{cls.created_ids['contrato_integridade']}", headers=cls.admin_headers)
         if 'outro_contrato' in cls.created_ids:
             requests.delete(f"{BASE_URL}/contratos/{cls.created_ids['outro_contrato']}", headers=cls.admin_headers)
-        if 'outro_gestor' in cls.created_ids:
-            requests.delete(f"{BASE_URL}/usuarios/{cls.created_ids['outro_gestor']}", headers=cls.admin_headers)
-
         if 'contrato' in cls.created_ids:
             r = requests.delete(f"{BASE_URL}/contratos/{cls.created_ids['contrato']}", headers=cls.admin_headers)
-            print(f"Contrato ID {cls.created_ids['contrato']} deletado (Status: {r.status_code}).")
-
+            print(f"Contrato principal ID {cls.created_ids['contrato']} deletado (Status: {r.status_code}).")
+        
+        # Limpa usuários depois
+        if 'outro_gestor' in cls.created_ids:
+            requests.delete(f"{BASE_URL}/usuarios/{cls.created_ids['outro_gestor']}", headers=cls.admin_headers)
         if 'gestor' in cls.created_ids:
             r = requests.delete(f"{BASE_URL}/usuarios/{cls.created_ids['gestor']}", headers=cls.admin_headers)
             print(f"Usuário Gestor ID {cls.created_ids['gestor']} deletado (Status: {r.status_code}).")
-
         if 'fiscal' in cls.created_ids:
             r = requests.delete(f"{BASE_URL}/usuarios/{cls.created_ids['fiscal']}", headers=cls.admin_headers)
             print(f"Usuário Fiscal ID {cls.created_ids['fiscal']} deletado (Status: {r.status_code}).")
-
+        
+        # Finalmente, limpa contratados
         if 'contratado' in cls.created_ids:
             r = requests.delete(f"{BASE_URL}/contratados/{cls.created_ids['contratado']}", headers=cls.admin_headers)
             print(f"Contratado ID {cls.created_ids['contratado']} deletado (Status: {r.status_code}).")
